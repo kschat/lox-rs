@@ -1,6 +1,6 @@
 use std::fmt::{Debug, Display};
 
-use crate::token_kind::TokenKind;
+use crate::{error::LoxError, token_kind::TokenKind};
 
 #[derive(Debug, Clone)]
 pub enum TokenLiteral {
@@ -30,6 +30,17 @@ impl From<String> for TokenLiteral {
 impl From<f64> for TokenLiteral {
     fn from(value: f64) -> Self {
         Self::Number(value)
+    }
+}
+
+impl TryFrom<TokenLiteral> for f64 {
+    type Error = LoxError;
+
+    fn try_from(value: TokenLiteral) -> Result<Self, Self::Error> {
+        match value {
+            TokenLiteral::Number(v) => Ok(v),
+            _ => Err(Self::Error::ParseError),
+        }
     }
 }
 

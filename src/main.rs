@@ -5,7 +5,8 @@ use std::{
     process,
 };
 
-use expr::AstPrinter;
+use error::LoxError;
+use interpreter::Interpreter;
 use parser::Parser;
 use token::Token;
 use token_kind::TokenKind;
@@ -15,18 +16,24 @@ use crate::scanner::Scanner;
 
 mod error;
 mod expr;
+mod interpreter;
 mod parser;
 mod scanner;
 mod token;
 mod token_kind;
 
+// TODO come up with better pattern to handle errors
 struct Lox {
     had_error: bool,
+    had_runtime_error: bool,
 }
 
 impl Lox {
     pub fn new() -> Self {
-        Self { had_error: false }
+        Self {
+            had_error: false,
+            had_runtime_error: false,
+        }
     }
 
     fn run_file<T: AsRef<Path>>(&mut self, path: T) -> Result<()> {
@@ -35,6 +42,10 @@ impl Lox {
 
         if self.had_error {
             process::exit(65);
+        }
+
+        if self.had_runtime_error {
+            process::exit(70);
         }
 
         Ok(())
@@ -80,7 +91,7 @@ impl Lox {
                 return;
             }
 
-            println!("{}", AstPrinter.print(expression));
+            Interpreter::new(|error| self.runtime_error(error)).interpret(expression);
         }
     }
 
@@ -95,6 +106,18 @@ impl Lox {
         };
 
         self.report_error(token.line, &at, message)
+    }
+
+    fn runtime_error(&mut self, error: &LoxError) {
+        let message = match error {
+            LoxError::RuntimeError { message, token } => {
+                format!("{}\n[line {}]", message, token.line)
+            }
+            error => format!("{}", error),
+        };
+
+        eprintln!("{}", message);
+        self.had_runtime_error = true;
     }
 
     fn report_error(&mut self, line: usize, at: &str, message: &str) {
