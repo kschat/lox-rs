@@ -2,10 +2,12 @@ use std::fmt::{Debug, Display};
 
 use crate::token_kind::TokenKind;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum TokenLiteral {
     String(String),
     Number(f64),
+    Boolean(bool),
+    Nil,
 }
 
 impl Display for TokenLiteral {
@@ -13,6 +15,8 @@ impl Display for TokenLiteral {
         match self {
             Self::String(value) => Display::fmt(value, f),
             Self::Number(value) => Display::fmt(value, f),
+            Self::Boolean(value) => Display::fmt(value, f),
+            Self::Nil => Display::fmt("nil", f),
         }
     }
 }
@@ -29,7 +33,7 @@ impl From<f64> for TokenLiteral {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Token {
     pub kind: TokenKind,
     pub lexeme: String,

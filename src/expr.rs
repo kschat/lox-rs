@@ -25,10 +25,10 @@ pub trait Visitor<T> {
     fn visit_literal_expr(&self, literal: &TokenLiteral) -> T;
 }
 
-struct AstPrinter;
+pub struct AstPrinter;
 
 impl AstPrinter {
-    fn print(&self, expr: Expr) -> String {
+    pub fn print(&self, expr: Expr) -> String {
         expr.accept(self)
     }
 

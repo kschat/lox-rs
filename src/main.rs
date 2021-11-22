@@ -5,14 +5,20 @@ use std::{
     process,
 };
 
+use expr::AstPrinter;
+use parser::Parser;
+use token::Token;
+use token_kind::TokenKind;
+
+use crate::error::Result;
 use crate::scanner::Scanner;
 
+mod error;
 mod expr;
+mod parser;
 mod scanner;
 mod token;
 mod token_kind;
-
-type Result<T> = std::result::Result<T, anyhow::Error>;
 
 struct Lox {
     had_error: bool,
@@ -56,12 +62,39 @@ impl Lox {
     }
 
     fn run(&mut self, source: String) {
-        let mut scanner = Scanner::new(source);
-        scanner.on_error(|line, message| self.report_error(line, "", &message));
+        let scanner = {
+            let mut s = Scanner::new(source);
+            s.on_error(|line, message| self.scanner_error(line, "", &message));
+            s
+        };
 
-        for token in scanner.scan_tokens() {
-            println!("{}", token);
+        let tokens = scanner.scan_tokens();
+        let parser = {
+            let mut p = Parser::new(tokens);
+            p.on_error(|token, message| self.parser_error(token, message));
+            p
+        };
+
+        if let Some(expression) = parser.parse() {
+            if self.had_error {
+                return;
+            }
+
+            println!("{}", AstPrinter.print(expression));
         }
+    }
+
+    fn scanner_error(&mut self, line: usize, _at: &str, message: &str) {
+        self.report_error(line, "", message);
+    }
+
+    fn parser_error(&mut self, token: &Token, message: &str) {
+        let at = match token.kind {
+            TokenKind::Eof => " at end".to_string(),
+            _ => format!(" at '{}'", token.lexeme),
+        };
+
+        self.report_error(token.line, &at, message)
     }
 
     fn report_error(&mut self, line: usize, at: &str, message: &str) {
