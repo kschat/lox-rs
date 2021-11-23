@@ -5,27 +5,28 @@ use std::{
     process,
 };
 
-use error::LoxError;
+use error::{LoxError, ParserErrorDetails, ScannerErrorDetails};
 use interpreter::Interpreter;
 use parser::Parser;
-use token::Token;
 use token_kind::TokenKind;
 
 use crate::error::Result;
 use crate::scanner::Scanner;
 
+mod environment;
 mod error;
 mod expr;
 mod interpreter;
 mod parser;
 mod scanner;
+mod stmt;
 mod token;
 mod token_kind;
 
-// TODO come up with better pattern to handle errors
 struct Lox {
     had_error: bool,
     had_runtime_error: bool,
+    interpreter: Interpreter,
 }
 
 impl Lox {
@@ -33,6 +34,7 @@ impl Lox {
         Self {
             had_error: false,
             had_runtime_error: false,
+            interpreter: Interpreter::new(),
         }
     }
 
@@ -73,39 +75,53 @@ impl Lox {
     }
 
     fn run(&mut self, source: String) {
-        let scanner = {
-            let mut s = Scanner::new(source);
-            s.on_error(|line, message| self.scanner_error(line, "", &message));
-            s
-        };
-
-        let tokens = scanner.scan_tokens();
-        let parser = {
-            let mut p = Parser::new(tokens);
-            p.on_error(|token, message| self.parser_error(token, message));
-            p
-        };
-
-        if let Some(expression) = parser.parse() {
-            if self.had_error {
-                return;
+        let tokens = match Scanner::new(source).scan_tokens() {
+            Ok(tokens) => tokens,
+            Err(LoxError::ScanningError { tokens, details }) => {
+                self.report_scanning_error(&details);
+                tokens
             }
+            Err(error) => panic!("Unexpected error: {}", error),
+        };
 
-            Interpreter::new(|error| self.runtime_error(error)).interpret(expression);
+        let statements = match Parser::new(tokens).parse() {
+            Ok(statements) => statements,
+            Err(LoxError::ParseError {
+                statements,
+                details,
+            }) => {
+                self.report_parse_error(&details);
+                statements
+            }
+            Err(error) => panic!("Unexpected error: {}", error),
+        };
+
+        if self.had_error {
+            return;
+        }
+
+        if let Err(errors) = self.interpreter.interpret(statements) {
+            for error in errors {
+                self.runtime_error(&error);
+            }
         }
     }
 
-    fn scanner_error(&mut self, line: usize, _at: &str, message: &str) {
-        self.report_error(line, "", message);
+    fn report_scanning_error(&mut self, details: &[ScannerErrorDetails]) {
+        for detail in details {
+            self.report_error(detail.line, "", &detail.message)
+        }
     }
 
-    fn parser_error(&mut self, token: &Token, message: &str) {
-        let at = match token.kind {
-            TokenKind::Eof => " at end".to_string(),
-            _ => format!(" at '{}'", token.lexeme),
-        };
+    fn report_parse_error(&mut self, details: &[ParserErrorDetails]) {
+        for detail in details {
+            let at = match detail.token.kind {
+                TokenKind::Eof => " at end".to_string(),
+                _ => format!(" at '{}'", detail.token.lexeme),
+            };
 
-        self.report_error(token.line, &at, message)
+            self.report_error(detail.token.line, &at, &detail.message)
+        }
     }
 
     fn runtime_error(&mut self, error: &LoxError) {

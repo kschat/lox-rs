@@ -1,90 +1,33 @@
 use crate::token::{Token, TokenLiteral};
 
+#[derive(Debug)]
 pub enum Expr {
     Binary(Box<Expr>, Token, Box<Expr>),
     Unary(Token, Box<Expr>),
     Grouping(Box<Expr>),
     Literal(TokenLiteral),
+    Variable(Token),
+    Assign(Token, Box<Expr>),
 }
 
 impl Expr {
-    pub fn accept<T>(&self, visitor: &dyn Visitor<T>) -> T {
+    pub fn accept<T>(&self, visitor: &mut dyn ExprVisitor<T>) -> T {
         match self {
             Expr::Binary(left, operator, right) => visitor.visit_binary_expr(left, operator, right),
             Expr::Unary(operator, right) => visitor.visit_unary_expr(operator, right),
             Expr::Grouping(expr) => visitor.visit_group_expr(expr),
             Expr::Literal(literal) => visitor.visit_literal_expr(literal),
+            Expr::Variable(name) => visitor.visit_variable_expr(name),
+            Expr::Assign(name, value) => visitor.visit_assign_expr(name, value),
         }
     }
 }
 
-pub trait Visitor<T> {
-    fn visit_binary_expr(&self, left: &Expr, operator: &Token, right: &Expr) -> T;
-    fn visit_unary_expr(&self, operator: &Token, right: &Expr) -> T;
-    fn visit_group_expr(&self, expr: &Expr) -> T;
-    fn visit_literal_expr(&self, literal: &TokenLiteral) -> T;
-}
-
-pub struct AstPrinter;
-
-impl AstPrinter {
-    pub fn print(&self, expr: Expr) -> String {
-        expr.accept(self)
-    }
-
-    fn parenthesize(&self, name: &str, exprs: &[&Expr]) -> String {
-        exprs.iter().fold(format!("({}", name), |acc, expr| {
-            format!("{} {}", acc, expr.accept(self))
-        }) + ")"
-    }
-}
-
-impl Visitor<String> for AstPrinter {
-    fn visit_binary_expr(&self, left: &Expr, operator: &Token, right: &Expr) -> String {
-        self.parenthesize(&operator.lexeme, &[left, right])
-    }
-
-    fn visit_unary_expr(&self, operator: &Token, right: &Expr) -> String {
-        self.parenthesize(&operator.lexeme, &[right])
-    }
-
-    fn visit_group_expr(&self, expr: &Expr) -> String {
-        self.parenthesize("group", &[expr])
-    }
-
-    fn visit_literal_expr(&self, literal: &TokenLiteral) -> String {
-        literal.to_string()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::token_kind::TokenKind;
-
-    #[test]
-    fn test_printer() {
-        let expr = Expr::Binary(
-            Box::new(Expr::Unary(
-                Token {
-                    kind: TokenKind::Minus,
-                    lexeme: "-".to_string(),
-                    literal: None,
-                    line: 1,
-                },
-                Box::new(Expr::Literal(TokenLiteral::Number(123_f64))),
-            )),
-            Token {
-                kind: TokenKind::Star,
-                lexeme: "*".to_string(),
-                literal: None,
-                line: 1,
-            },
-            Box::new(Expr::Grouping(Box::new(Expr::Literal(
-                TokenLiteral::Number(45.76),
-            )))),
-        );
-
-        assert_eq!(AstPrinter.print(expr), "(* (- 123) (group 45.76))");
-    }
+pub trait ExprVisitor<T> {
+    fn visit_binary_expr(&mut self, left: &Expr, operator: &Token, right: &Expr) -> T;
+    fn visit_unary_expr(&mut self, operator: &Token, right: &Expr) -> T;
+    fn visit_group_expr(&mut self, expr: &Expr) -> T;
+    fn visit_literal_expr(&mut self, literal: &TokenLiteral) -> T;
+    fn visit_variable_expr(&mut self, name: &Token) -> T;
+    fn visit_assign_expr(&mut self, name: &Token, value: &Expr) -> T;
 }

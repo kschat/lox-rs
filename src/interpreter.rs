@@ -1,33 +1,43 @@
 use crate::{
+    environment::Environment,
     error::{LoxError, Result},
-    expr::{Expr, Visitor},
+    expr::{Expr, ExprVisitor},
+    stmt::{Stmt, StmtVisitor},
     token::{Token, TokenLiteral},
     token_kind::TokenKind,
 };
 
-pub struct Interpreter<'a> {
-    error_handler: Box<dyn FnMut(&LoxError) + 'a>,
+pub struct Interpreter {
+    environment: Environment,
 }
 
-impl<'a> Interpreter<'a> {
-    pub fn new<F>(handler: F) -> Self
-    where
-        F: FnMut(&LoxError) + 'a,
-    {
+impl Interpreter {
+    pub fn new() -> Self {
         Self {
-            error_handler: Box::new(handler),
+            environment: Environment::new(),
         }
     }
 
-    pub fn interpret(&mut self, expr: Expr) {
-        match self.evaluate(&expr) {
-            Ok(value) => println!("{}", value),
-            Err(error) => (self.error_handler)(&error),
+    pub fn interpret(&mut self, stmts: Vec<Stmt>) -> Result<(), Vec<LoxError>> {
+        let mut errors: Vec<LoxError> = vec![];
+        for stmt in stmts {
+            if let Err(error) = self.execute(&stmt) {
+                errors.push(error);
+            }
+        }
+
+        match errors.len() {
+            0 => Ok(()),
+            _ => Err(errors),
         }
     }
 
-    fn evaluate(&self, expr: &Expr) -> Result<TokenLiteral> {
+    fn evaluate(&mut self, expr: &Expr) -> Result<TokenLiteral> {
         expr.accept(self)
+    }
+
+    fn execute(&mut self, stmt: &Stmt) -> Result<()> {
+        stmt.accept(self)
     }
 
     fn is_truthy(literal: TokenLiteral) -> bool {
@@ -59,9 +69,9 @@ impl<'a> Interpreter<'a> {
     }
 }
 
-impl<'a> Visitor<Result<TokenLiteral>> for Interpreter<'a> {
+impl ExprVisitor<Result<TokenLiteral>> for Interpreter {
     fn visit_binary_expr(
-        &self,
+        &mut self,
         left: &Expr,
         operator: &Token,
         right: &Expr,
@@ -121,7 +131,7 @@ impl<'a> Visitor<Result<TokenLiteral>> for Interpreter<'a> {
         })
     }
 
-    fn visit_unary_expr(&self, operator: &Token, right: &Expr) -> Result<TokenLiteral> {
+    fn visit_unary_expr(&mut self, operator: &Token, right: &Expr) -> Result<TokenLiteral> {
         let right_value = self.evaluate(right)?;
 
         Ok(match operator.kind {
@@ -131,11 +141,47 @@ impl<'a> Visitor<Result<TokenLiteral>> for Interpreter<'a> {
         })
     }
 
-    fn visit_group_expr(&self, expr: &Expr) -> Result<TokenLiteral> {
+    fn visit_group_expr(&mut self, expr: &Expr) -> Result<TokenLiteral> {
         self.evaluate(expr)
     }
 
-    fn visit_literal_expr(&self, literal: &TokenLiteral) -> Result<TokenLiteral> {
+    fn visit_literal_expr(&mut self, literal: &TokenLiteral) -> Result<TokenLiteral> {
         Ok(literal.clone())
+    }
+
+    fn visit_variable_expr(&mut self, name: &Token) -> Result<TokenLiteral> {
+        // TODO get rid of clone
+        self.environment.get(name).map(|v| v.clone())
+    }
+
+    fn visit_assign_expr(&mut self, name: &Token, expr: &Expr) -> Result<TokenLiteral> {
+        let value = self.evaluate(expr)?;
+        self.environment.assign(name, &value)?;
+
+        Ok(value)
+    }
+}
+
+impl StmtVisitor<Result<()>> for Interpreter {
+    fn visit_expression_stmt(&mut self, expr: &Expr) -> Result<()> {
+        self.evaluate(expr)?;
+        Ok(())
+    }
+
+    fn visit_print_stmt(&mut self, expr: &Expr) -> Result<()> {
+        let value = self.evaluate(expr)?;
+        println!("{}", value);
+        Ok(())
+    }
+
+    fn visit_var_stmt(&mut self, name: &Token, initializer: Option<&Expr>) -> Result<()> {
+        let value = match initializer {
+            Some(v) => self.evaluate(v)?,
+            None => TokenLiteral::Nil,
+        };
+
+        self.environment.define(&name.lexeme, value);
+
+        Ok(())
     }
 }

@@ -39,7 +39,7 @@ impl TryFrom<TokenLiteral> for f64 {
     fn try_from(value: TokenLiteral) -> Result<Self, Self::Error> {
         match value {
             TokenLiteral::Number(v) => Ok(v),
-            _ => Err(Self::Error::ParseError),
+            _ => Err(Self::Error::LiteralParseError),
         }
     }
 }

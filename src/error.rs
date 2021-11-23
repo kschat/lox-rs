@@ -1,15 +1,39 @@
+use crate::{stmt::Stmt, token::Token};
 use std::io;
-
 use thiserror::Error;
 
-use crate::token::Token;
+pub type Result<T, E = LoxError> = std::result::Result<T, E>;
 
-pub type Result<T> = std::result::Result<T, LoxError>;
+#[derive(Error, Debug)]
+#[error("{message}")]
+pub struct ScannerErrorDetails {
+    pub message: String,
+    pub line: usize,
+}
+
+#[derive(Error, Debug)]
+#[error("{message}")]
+pub struct ParserErrorDetails {
+    pub message: String,
+    pub token: Token,
+}
 
 #[derive(Error, Debug)]
 pub enum LoxError {
-    #[error("Failed to parse.")]
-    ParseError,
+    #[error("Scanning Error: {details:?}")]
+    ScanningError {
+        tokens: Vec<Token>,
+        details: Vec<ScannerErrorDetails>,
+    },
+
+    #[error("Failed to parse literal value.")]
+    LiteralParseError,
+
+    #[error("Parse Error: {details:?}")]
+    ParseError {
+        statements: Vec<Stmt>,
+        details: Vec<ParserErrorDetails>,
+    },
 
     #[error("Runtime Error: {message}")]
     RuntimeError { message: String, token: Token },

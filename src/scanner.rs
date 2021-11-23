@@ -1,18 +1,19 @@
 use crate::{
+    error::{LoxError, Result, ScannerErrorDetails},
     token::{Token, TokenLiteral},
     token_kind::TokenKind,
 };
 
-pub struct Scanner<'a> {
+pub struct Scanner {
     source: String,
     tokens: Vec<Token>,
     start: usize,
     current: usize,
     line: usize,
-    error_handler: Box<dyn FnMut(usize, String) + 'a>,
+    scanning_errors: Vec<ScannerErrorDetails>,
 }
 
-impl<'a> Scanner<'a> {
+impl Scanner {
     pub fn new(source: String) -> Self {
         Self {
             source,
@@ -20,20 +21,11 @@ impl<'a> Scanner<'a> {
             start: 0,
             current: 0,
             line: 1,
-            error_handler: Box::new(|line, message| {
-                panic!("Unhandled error at {}: {}", line, message)
-            }),
+            scanning_errors: vec![],
         }
     }
 
-    pub fn on_error<F>(&mut self, handler: F)
-    where
-        F: FnMut(usize, String) + 'a,
-    {
-        self.error_handler = Box::new(handler);
-    }
-
-    pub fn scan_tokens(mut self) -> Vec<Token> {
+    pub fn scan_tokens(mut self) -> Result<Vec<Token>> {
         while !self.is_at_end() {
             self.start = self.current;
             self.scan_token();
@@ -46,7 +38,13 @@ impl<'a> Scanner<'a> {
             line: self.line,
         });
 
-        self.tokens
+        match self.scanning_errors.len() {
+            0 => Ok(self.tokens),
+            _ => Err(LoxError::ScanningError {
+                tokens: self.tokens,
+                details: self.scanning_errors,
+            }),
+        }
     }
 
     fn scan_token(&mut self) {
@@ -93,9 +91,7 @@ impl<'a> Scanner<'a> {
 
             c if Scanner::is_alpha(c) => self.parse_identifier(),
 
-            c => {
-                (self.error_handler)(self.line, format!("Unexpected character '{}'.", c));
-            }
+            c => self.report_error(self.line, &format!("Unexpected character '{}'.", c)),
         }
     }
 
@@ -167,7 +163,8 @@ impl<'a> Scanner<'a> {
         }
 
         if self.is_at_end() {
-            (self.error_handler)(self.line, "Unterminated string.".into());
+            self.report_error(self.line, "Unterminated string.");
+
             return;
         }
 
@@ -237,6 +234,13 @@ impl<'a> Scanner<'a> {
 
     fn str_at(&self, start: usize, end: usize) -> &str {
         &self.source[start..end]
+    }
+
+    fn report_error(&mut self, line: usize, message: &str) {
+        self.scanning_errors.push(ScannerErrorDetails {
+            line,
+            message: message.into(),
+        });
     }
 
     fn is_digit(c: char) -> bool {

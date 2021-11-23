@@ -1,50 +1,146 @@
 use crate::{
-    error::{LoxError, Result},
+    error::{LoxError, ParserErrorDetails, Result},
     expr::Expr,
+    stmt::Stmt,
     token::{Token, TokenLiteral},
     token_kind::TokenKind,
 };
 
+/// Result used internally to interupt parsing until synchronization can occur
+type ParserResult<T> = Result<T, ParserErrorDetails>;
+
 /// Grammar:
 ///
-/// expression  -> equality ;
-/// equality    -> comparison ( ( "==" | "!=" ) comparison )* ;
-/// comparison  -> term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
-/// term        -> factor ( ( "-" | "+" ) factor )* ;
-/// factor      -> unary ( ( "/" | "*" ) unary )* ;
-/// unary       -> ( "!" | "-" ) unary | primary ;
-/// primary     -> NUMBER | STRING | "true" | "false" | "nil" | "(" expression ")" ;
-pub struct Parser<'a> {
+/// program             -> declaration* EOF ;
+///
+/// declaration         -> varDecl | statement
+/// varDecl             -> "var" IDENTIFIER ("=" expression)? ";" ;
+///
+/// statement           -> expressionStatement | printStatement ;
+/// expressionStatement -> expression ";" ;
+/// printStatement      -> "print" expression ";" ;
+///
+/// expression          -> assignment ;
+/// assignment          -> IDENTIFIER "=" assignment | equality
+/// equality            -> comparison ( ( "==" | "!=" ) comparison )* ;
+/// comparison          -> term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
+/// term                -> factor ( ( "-" | "+" ) factor )* ;
+/// factor              -> unary ( ( "/" | "*" ) unary )* ;
+/// unary               -> ( "!" | "-" ) unary | primary ;
+/// primary             -> NUMBER | STRING | "nil" | "true" | "false"
+///                      | "(" expression ")" | IDENTIFIER ;
+pub struct Parser {
     tokens: Vec<Token>,
     current: usize,
-    error_handler: Box<dyn FnMut(&Token, &str) + 'a>,
+    parsing_errors: Vec<ParserErrorDetails>,
 }
 
-impl<'a> Parser<'a> {
+impl Parser {
     pub fn new(tokens: Vec<Token>) -> Self {
         Self {
             tokens,
             current: 0,
-            error_handler: Box::new(|_, _| panic!("Unhandled error")),
+            parsing_errors: vec![],
         }
     }
 
-    pub fn on_error<F>(&mut self, handler: F)
-    where
-        F: FnMut(&Token, &str) + 'a,
-    {
-        self.error_handler = Box::new(handler);
+    pub fn parse(mut self) -> Result<Vec<Stmt>> {
+        let mut statements: Vec<Stmt> = vec![];
+        while !self.is_at_end() {
+            match self.declaration() {
+                Ok(statement) => statements.push(statement),
+                Err(error) => self.parsing_errors.push(error),
+            }
+        }
+
+        match self.parsing_errors.len() {
+            0 => Ok(statements),
+            _ => Err(LoxError::ParseError {
+                statements,
+                details: self.parsing_errors,
+            }),
+        }
     }
 
-    pub fn parse(mut self) -> Option<Expr> {
-        self.expression().ok()
+    fn declaration(&mut self) -> ParserResult<Stmt> {
+        self.try_declaration().map_err(|error| {
+            self.synchronize();
+            error
+        })
     }
 
-    fn expression(&mut self) -> Result<Expr> {
-        self.equality()
+    fn try_declaration(&mut self) -> ParserResult<Stmt> {
+        if self.matches(&[TokenKind::Var]) {
+            return self.var_declaration();
+        }
+
+        self.statement()
     }
 
-    fn equality(&mut self) -> Result<Expr> {
+    fn var_declaration(&mut self) -> ParserResult<Stmt> {
+        // TODO get rid of clone
+        let identifier = self
+            .try_consume(TokenKind::Identifier, "Expected variable name.")?
+            .clone();
+
+        let initializer = match self.matches(&[TokenKind::Equal]) {
+            true => Some(self.expression()?),
+            false => None,
+        };
+
+        self.try_consume(
+            TokenKind::Semicolon,
+            "Expected ';' after variable declaration.",
+        )?;
+
+        Ok(Stmt::Var(identifier, initializer))
+    }
+
+    fn statement(&mut self) -> ParserResult<Stmt> {
+        if self.matches(&[TokenKind::Print]) {
+            return self.print_statement();
+        }
+
+        self.expression_statement()
+    }
+
+    fn print_statement(&mut self) -> ParserResult<Stmt> {
+        let value = self.expression()?;
+        self.try_consume(TokenKind::Semicolon, "Expected ';' after value.")?;
+
+        Ok(Stmt::Print(value.into()))
+    }
+
+    fn expression_statement(&mut self) -> ParserResult<Stmt> {
+        let value = self.expression()?;
+        self.try_consume(TokenKind::Semicolon, "Expected ';' after expression.")?;
+
+        Ok(Stmt::Expression(value.into()))
+    }
+
+    fn expression(&mut self) -> ParserResult<Expr> {
+        self.assignment()
+    }
+
+    fn assignment(&mut self) -> ParserResult<Expr> {
+        let expr = self.equality()?;
+
+        if self.matches(&[TokenKind::Equal]) {
+            // TODO get rid of clone
+            let equal = self.previous().clone();
+            let value = self.assignment()?;
+
+            if let Expr::Variable(name) = expr {
+                return Ok(Expr::Assign(name, value.into()));
+            }
+
+            self.report_error(&equal, "Invalid assignment target.");
+        }
+
+        Ok(expr)
+    }
+
+    fn equality(&mut self) -> ParserResult<Expr> {
         let mut expr = self.comparison()?;
 
         while self.matches(&[TokenKind::BangEqual, TokenKind::EqualEqual]) {
@@ -57,7 +153,7 @@ impl<'a> Parser<'a> {
         Ok(expr)
     }
 
-    fn comparison(&mut self) -> Result<Expr> {
+    fn comparison(&mut self) -> ParserResult<Expr> {
         let mut expr = self.term()?;
 
         while self.matches(&[
@@ -75,7 +171,7 @@ impl<'a> Parser<'a> {
         Ok(expr)
     }
 
-    fn term(&mut self) -> Result<Expr> {
+    fn term(&mut self) -> ParserResult<Expr> {
         let mut expr = self.factor()?;
 
         while self.matches(&[TokenKind::Minus, TokenKind::Plus]) {
@@ -88,7 +184,7 @@ impl<'a> Parser<'a> {
         Ok(expr)
     }
 
-    fn factor(&mut self) -> Result<Expr> {
+    fn factor(&mut self) -> ParserResult<Expr> {
         let mut expr = self.unary()?;
 
         while self.matches(&[TokenKind::Slash, TokenKind::Star]) {
@@ -101,7 +197,7 @@ impl<'a> Parser<'a> {
         Ok(expr)
     }
 
-    fn unary(&mut self) -> Result<Expr> {
+    fn unary(&mut self) -> ParserResult<Expr> {
         if self.matches(&[TokenKind::Bang, TokenKind::Minus]) {
             // TODO get rid of clone
             let operator = self.previous().clone();
@@ -112,7 +208,7 @@ impl<'a> Parser<'a> {
         self.primary()
     }
 
-    fn primary(&mut self) -> Result<Expr> {
+    fn primary(&mut self) -> ParserResult<Expr> {
         if self.matches(&[TokenKind::True]) {
             return Ok(Expr::Literal(TokenLiteral::Boolean(true)));
         }
@@ -126,7 +222,7 @@ impl<'a> Parser<'a> {
         }
 
         if self.matches(&[TokenKind::String, TokenKind::Number]) {
-            // TODO get rid of clone
+            // TODO get rid of clone & unwrap
             let literal = self.previous().clone().literal.unwrap();
 
             return Ok(Expr::Literal(literal));
@@ -137,6 +233,11 @@ impl<'a> Parser<'a> {
             self.try_consume(TokenKind::RightParen, "Expected ')' after expression.")?;
 
             return Ok(Expr::Grouping(expr.into()));
+        }
+
+        if self.matches(&[TokenKind::Identifier]) {
+            // TODO get rid of clone
+            return Ok(Expr::Variable(self.previous().clone()));
         }
 
         // TODO get rid of clone
@@ -174,7 +275,7 @@ impl<'a> Parser<'a> {
         false
     }
 
-    fn try_consume(&mut self, kind: TokenKind, message: &str) -> Result<&Token> {
+    fn try_consume(&mut self, kind: TokenKind, message: &str) -> ParserResult<&Token> {
         if self.check(kind) {
             return Ok(self.advance());
         }
@@ -183,10 +284,11 @@ impl<'a> Parser<'a> {
         Err(self.report_error(&self.peek().clone(), message))
     }
 
-    fn report_error(&mut self, token: &Token, message: &str) -> LoxError {
-        (self.error_handler)(token, message);
-
-        LoxError::ParseError
+    fn report_error(&mut self, token: &Token, message: &str) -> ParserErrorDetails {
+        ParserErrorDetails {
+            message: message.into(),
+            token: token.clone(),
+        }
     }
 
     fn check(&self, kind: TokenKind) -> bool {
