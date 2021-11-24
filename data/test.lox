@@ -1,4 +1,26 @@
-var name = "Kylie";
+var a = "global a";
+var b = "global b";
+print "";
+print "Global";
+print "-------";
+print a;
+print b;
 
-print "Hello " + name + "!!!";
+{
+  var a = "inner a";
+
+  print "";
+  print "Inner";
+  print "-------";
+  print a;
+  print b;
+
+  b = "mutated b";
+}
+
+print "";
+print "Global";
+print "-------";
+print a;
+print b;
 

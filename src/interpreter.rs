@@ -184,4 +184,19 @@ impl StmtVisitor<Result<()>> for Interpreter {
 
         Ok(())
     }
+
+    fn visit_block_stmt(&mut self, statements: &[Stmt]) -> Result<()> {
+        self.environment.new_scope();
+
+        for statement in statements {
+            self.execute(statement).map_err(|error| {
+                self.environment.end_scope();
+                error
+            })?;
+        }
+
+        self.environment.end_scope();
+
+        Ok(())
+    }
 }

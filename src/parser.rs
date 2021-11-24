@@ -16,9 +16,10 @@ type ParserResult<T> = Result<T, ParserErrorDetails>;
 /// declaration         -> varDecl | statement
 /// varDecl             -> "var" IDENTIFIER ("=" expression)? ";" ;
 ///
-/// statement           -> expressionStatement | printStatement ;
+/// statement           -> expressionStatement | printStatement | block ;
 /// expressionStatement -> expression ";" ;
 /// printStatement      -> "print" expression ";" ;
+/// block               -> "{" declaration* "}" ;
 ///
 /// expression          -> assignment ;
 /// assignment          -> IDENTIFIER "=" assignment | equality
@@ -101,6 +102,10 @@ impl Parser {
             return self.print_statement();
         }
 
+        if self.matches(&[TokenKind::LeftBrace]) {
+            return self.block();
+        }
+
         self.expression_statement()
     }
 
@@ -116,6 +121,17 @@ impl Parser {
         self.try_consume(TokenKind::Semicolon, "Expected ';' after expression.")?;
 
         Ok(Stmt::Expression(value.into()))
+    }
+
+    fn block(&mut self) -> ParserResult<Stmt> {
+        let mut statements = vec![];
+        while !self.check(TokenKind::RightBrace) && !self.is_at_end() {
+            statements.push(self.declaration()?);
+        }
+
+        self.try_consume(TokenKind::RightBrace, "Expected '}' after block.")?;
+
+        Ok(Stmt::Block(statements))
     }
 
     fn expression(&mut self) -> ParserResult<Expr> {
