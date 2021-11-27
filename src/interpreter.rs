@@ -40,8 +40,8 @@ impl Interpreter {
         stmt.accept(self)
     }
 
-    fn is_truthy(literal: TokenLiteral) -> bool {
-        match literal {
+    fn is_truthy(literal: &TokenLiteral) -> bool {
+        match *literal {
             TokenLiteral::Nil => false,
             TokenLiteral::Boolean(value) => value,
             _ => true,
@@ -136,7 +136,7 @@ impl ExprVisitor<Result<TokenLiteral>> for Interpreter {
 
         Ok(match operator.kind {
             TokenKind::Minus => TokenLiteral::Number(-f64::try_from(right_value).unwrap()),
-            TokenKind::Bang => TokenLiteral::Boolean(!Interpreter::is_truthy(right_value)),
+            TokenKind::Bang => TokenLiteral::Boolean(!Interpreter::is_truthy(&right_value)),
             _ => unreachable!(),
         })
     }
@@ -150,8 +150,7 @@ impl ExprVisitor<Result<TokenLiteral>> for Interpreter {
     }
 
     fn visit_variable_expr(&mut self, name: &Token) -> Result<TokenLiteral> {
-        // TODO get rid of clone
-        self.environment.get(name).map(|v| v.clone())
+        self.environment.get(name)
     }
 
     fn visit_assign_expr(&mut self, name: &Token, expr: &Expr) -> Result<TokenLiteral> {
@@ -159,6 +158,30 @@ impl ExprVisitor<Result<TokenLiteral>> for Interpreter {
         self.environment.assign(name, &value)?;
 
         Ok(value)
+    }
+
+    fn visit_logicial_expr(
+        &mut self,
+        left: &Expr,
+        operator: &Token,
+        right: &Expr,
+    ) -> Result<TokenLiteral> {
+        let left_value = self.evaluate(left)?;
+        match operator.kind {
+            TokenKind::Or => {
+                if Interpreter::is_truthy(&left_value) {
+                    return Ok(left_value);
+                }
+            }
+            TokenKind::And => {
+                if !Interpreter::is_truthy(&left_value) {
+                    return Ok(left_value);
+                }
+            }
+            _ => unreachable!(),
+        }
+
+        self.evaluate(right)
     }
 }
 
@@ -196,6 +219,29 @@ impl StmtVisitor<Result<()>> for Interpreter {
         }
 
         self.environment.end_scope();
+
+        Ok(())
+    }
+
+    fn visit_if_stmt(
+        &mut self,
+        condition: &Expr,
+        then_branch: &Stmt,
+        else_branch: Option<&Stmt>,
+    ) -> Result<()> {
+        if Interpreter::is_truthy(&self.evaluate(condition)?) {
+            self.execute(then_branch)?;
+        } else if let Some(else_branch) = else_branch {
+            self.execute(else_branch)?;
+        }
+
+        Ok(())
+    }
+
+    fn visit_while_stmt(&mut self, condition: &Expr, body: &Stmt) -> Result<()> {
+        while Interpreter::is_truthy(&self.evaluate(condition)?) {
+            self.execute(body)?;
+        }
 
         Ok(())
     }

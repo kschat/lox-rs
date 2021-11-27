@@ -13,16 +13,25 @@ type ParserResult<T> = Result<T, ParserErrorDetails>;
 ///
 /// program             -> declaration* EOF ;
 ///
-/// declaration         -> varDecl | statement
-/// varDecl             -> "var" IDENTIFIER ("=" expression)? ";" ;
+/// declaration         -> varDeclaration | statement
+/// varDeclaration      -> "var" IDENTIFIER ("=" expression)? ";" ;
 ///
-/// statement           -> expressionStatement | printStatement | block ;
+/// statement           -> expressionStatement | printStatement | block
+///                      | ifStatement | whileStatement ;
+/// ifStatement         -> "if" "(" expression ")" statement
+///                      ( "else" statement )? ;
+/// whileStatement      -> "while" "(" expression ")" statement ;
+/// forStatement        -> "for" "("
+///                      ( varDeclaration | expressionStatement | ";" )
+///                      expression? ";" expression?  ")" statement ;
 /// expressionStatement -> expression ";" ;
 /// printStatement      -> "print" expression ";" ;
 /// block               -> "{" declaration* "}" ;
 ///
 /// expression          -> assignment ;
-/// assignment          -> IDENTIFIER "=" assignment | equality
+/// assignment          -> IDENTIFIER "=" assignment | logicOr ;
+/// logicOr             -> logicAnd ( "or" logicAnd )* ;
+/// logicAnd            -> equality ( "and" equality )* ;
 /// equality            -> comparison ( ( "==" | "!=" ) comparison )* ;
 /// comparison          -> term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
 /// term                -> factor ( ( "-" | "+" ) factor )* ;
@@ -106,6 +115,18 @@ impl Parser {
             return self.block();
         }
 
+        if self.matches(&[TokenKind::If]) {
+            return self.if_statement();
+        }
+
+        if self.matches(&[TokenKind::While]) {
+            return self.while_statement();
+        }
+
+        if self.matches(&[TokenKind::For]) {
+            return self.for_statement();
+        }
+
         self.expression_statement()
     }
 
@@ -113,14 +134,76 @@ impl Parser {
         let value = self.expression()?;
         self.try_consume(TokenKind::Semicolon, "Expected ';' after value.")?;
 
-        Ok(Stmt::Print(value.into()))
+        Ok(Stmt::Print(value))
+    }
+
+    fn if_statement(&mut self) -> ParserResult<Stmt> {
+        self.try_consume(TokenKind::LeftParen, "Expected '(' after if.")?;
+        let condition = self.expression()?;
+        self.try_consume(TokenKind::RightParen, "Expected ')' after condition.")?;
+
+        let then_branch = self.statement()?;
+
+        let else_branch = match self.matches(&[TokenKind::Else]) {
+            true => Some(Box::new(self.statement()?)),
+            _ => None,
+        };
+
+        Ok(Stmt::If(condition, then_branch.into(), else_branch))
+    }
+
+    fn while_statement(&mut self) -> ParserResult<Stmt> {
+        self.try_consume(TokenKind::LeftParen, "Expected '(' after while.")?;
+        let condition = self.expression()?;
+        self.try_consume(TokenKind::RightParen, "Expected ')' after condition.")?;
+
+        let body = self.statement()?;
+
+        Ok(Stmt::While(condition, body.into()))
+    }
+
+    fn for_statement(&mut self) -> ParserResult<Stmt> {
+        self.try_consume(TokenKind::LeftParen, "Expected '(' after for.")?;
+        let initializer = if self.matches(&[TokenKind::Var]) {
+            Some(self.var_declaration()?)
+        } else if self.matches(&[TokenKind::Semicolon]) {
+            None
+        } else {
+            Some(self.expression_statement()?)
+        };
+
+        let condition = match self.check(TokenKind::Semicolon) {
+            true => Expr::Literal(TokenLiteral::Boolean(true)),
+            false => self.expression()?,
+        };
+
+        self.try_consume(TokenKind::Semicolon, "Expected ';' after loop condition.")?;
+
+        let increment = match self.check(TokenKind::RightParen) {
+            true => None,
+            false => Some(self.expression()?),
+        };
+
+        self.try_consume(TokenKind::RightParen, "Expected ')' after for clauses.")?;
+
+        let body = match (increment, self.statement()?) {
+            (Some(inc), body) => Stmt::Block(vec![body, Stmt::Expression(inc)]),
+            (_, body) => body,
+        };
+
+        let while_statement = Stmt::While(condition, body.into());
+
+        Ok(match initializer {
+            Some(init) => Stmt::Block(vec![init, while_statement]),
+            None => while_statement,
+        })
     }
 
     fn expression_statement(&mut self) -> ParserResult<Stmt> {
         let value = self.expression()?;
         self.try_consume(TokenKind::Semicolon, "Expected ';' after expression.")?;
 
-        Ok(Stmt::Expression(value.into()))
+        Ok(Stmt::Expression(value))
     }
 
     fn block(&mut self) -> ParserResult<Stmt> {
@@ -139,7 +222,7 @@ impl Parser {
     }
 
     fn assignment(&mut self) -> ParserResult<Expr> {
-        let expr = self.equality()?;
+        let expr = self.or()?;
 
         if self.matches(&[TokenKind::Equal]) {
             // TODO get rid of clone
@@ -151,6 +234,34 @@ impl Parser {
             }
 
             self.report_error(&equal, "Invalid assignment target.");
+        }
+
+        Ok(expr)
+    }
+
+    fn or(&mut self) -> ParserResult<Expr> {
+        let mut expr = self.and()?;
+
+        while self.matches(&[TokenKind::Or]) {
+            // TODO get rid of clone
+            let operator = self.previous().clone();
+            let right = self.and()?;
+
+            expr = Expr::Logical(expr.into(), operator, right.into());
+        }
+
+        Ok(expr)
+    }
+
+    fn and(&mut self) -> ParserResult<Expr> {
+        let mut expr = self.equality()?;
+
+        while self.matches(&[TokenKind::And]) {
+            // TODO get rid of clone
+            let operator = self.previous().clone();
+            let right = self.equality()?;
+
+            expr = Expr::Logical(expr.into(), operator, right.into());
         }
 
         Ok(expr)

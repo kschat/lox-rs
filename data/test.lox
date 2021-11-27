@@ -1,26 +1,7 @@
-var a = "global a";
-var b = "global b";
-print "";
-print "Global";
-print "-------";
-print a;
-print b;
+print "hi" or 2;
+print nil or "yes";
 
-{
-  var a = "inner a";
 
-  print "";
-  print "Inner";
-  print "-------";
-  print a;
-  print b;
-
-  b = "mutated b";
+for (var i = 0; i <= 10; i = i + 1) {
+  print i;
 }
-
-print "";
-print "Global";
-print "-------";
-print a;
-print b;
-

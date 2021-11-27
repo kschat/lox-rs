@@ -2,10 +2,12 @@ use crate::{expr::Expr, token::Token};
 
 #[derive(Debug)]
 pub enum Stmt {
-    Expression(Box<Expr>),
-    Print(Box<Expr>),
+    Expression(Expr),
+    Print(Expr),
     Var(Token, Option<Expr>),
     Block(Vec<Stmt>),
+    If(Expr, Box<Stmt>, Option<Box<Stmt>>),
+    While(Expr, Box<Stmt>),
 }
 
 impl Stmt {
@@ -15,6 +17,10 @@ impl Stmt {
             Stmt::Print(expr) => visitor.visit_print_stmt(expr),
             Stmt::Var(name, initializer) => visitor.visit_var_stmt(name, initializer.as_ref()),
             Stmt::Block(statements) => visitor.visit_block_stmt(statements),
+            Stmt::If(condition, then_branch, else_branch) => {
+                visitor.visit_if_stmt(condition, then_branch, else_branch.as_deref())
+            }
+            Stmt::While(condition, body) => visitor.visit_while_stmt(condition, body),
         }
     }
 }
@@ -24,4 +30,11 @@ pub trait StmtVisitor<T> {
     fn visit_print_stmt(&mut self, expr: &Expr) -> T;
     fn visit_var_stmt(&mut self, name: &Token, initializer: Option<&Expr>) -> T;
     fn visit_block_stmt(&mut self, statements: &[Stmt]) -> T;
+    fn visit_if_stmt(
+        &mut self,
+        condition: &Expr,
+        then_branch: &Stmt,
+        else_branch: Option<&Stmt>,
+    ) -> T;
+    fn visit_while_stmt(&mut self, condition: &Expr, body: &Stmt) -> T;
 }

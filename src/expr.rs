@@ -8,6 +8,7 @@ pub enum Expr {
     Literal(TokenLiteral),
     Variable(Token),
     Assign(Token, Box<Expr>),
+    Logical(Box<Expr>, Token, Box<Expr>),
 }
 
 impl Expr {
@@ -19,6 +20,9 @@ impl Expr {
             Expr::Literal(literal) => visitor.visit_literal_expr(literal),
             Expr::Variable(name) => visitor.visit_variable_expr(name),
             Expr::Assign(name, value) => visitor.visit_assign_expr(name, value),
+            Expr::Logical(left, operator, right) => {
+                visitor.visit_logicial_expr(left, operator, right)
+            }
         }
     }
 }
@@ -30,4 +34,5 @@ pub trait ExprVisitor<T> {
     fn visit_literal_expr(&mut self, literal: &TokenLiteral) -> T;
     fn visit_variable_expr(&mut self, name: &Token) -> T;
     fn visit_assign_expr(&mut self, name: &Token, value: &Expr) -> T;
+    fn visit_logicial_expr(&mut self, left: &Expr, operator: &Token, right: &Expr) -> T;
 }
