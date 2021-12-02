@@ -2,8 +2,9 @@ use crate::{
     error::{LoxError, ParserErrorDetails, Result},
     expr::Expr,
     stmt::Stmt,
-    token::{Token, TokenLiteral},
+    token::Token,
     token_kind::TokenKind,
+    value::Value,
 };
 
 const MAX_ARGUMENT_COUNT: usize = 255;
@@ -238,7 +239,7 @@ impl Parser {
         };
 
         let condition = match self.check(TokenKind::Semicolon) {
-            true => Expr::Literal(TokenLiteral::Boolean(true)),
+            true => Expr::Literal(Value::Boolean(true)),
             false => self.expression()?,
         };
 
@@ -460,15 +461,15 @@ impl Parser {
 
     fn primary(&mut self) -> ParserResult<Expr> {
         if self.matches(&[TokenKind::True]) {
-            return Ok(Expr::Literal(TokenLiteral::Boolean(true)));
+            return Ok(Expr::Literal(Value::Boolean(true)));
         }
 
         if self.matches(&[TokenKind::False]) {
-            return Ok(Expr::Literal(TokenLiteral::Boolean(false)));
+            return Ok(Expr::Literal(Value::Boolean(false)));
         }
 
         if self.matches(&[TokenKind::Nil]) {
-            return Ok(Expr::Literal(TokenLiteral::Nil));
+            return Ok(Expr::Literal(Value::Nil));
         }
 
         if self.matches(&[TokenKind::String, TokenKind::Number]) {

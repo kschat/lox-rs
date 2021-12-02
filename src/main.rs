@@ -24,6 +24,7 @@ mod scanner;
 mod stmt;
 mod token;
 mod token_kind;
+mod value;
 
 struct Lox {
     had_error: bool,

@@ -7,8 +7,9 @@ use crate::{
     expr::{Expr, ExprVisitor},
     native_functions::ClockCallable,
     stmt::{Stmt, StmtVisitor},
-    token::{Token, TokenLiteral},
+    token::Token,
     token_kind::TokenKind,
+    value::Value,
 };
 
 pub struct Interpreter {
@@ -21,10 +22,9 @@ impl Interpreter {
         let globals = Environment::new();
         let environment = globals.clone();
 
-        globals.borrow_mut().define(
-            "clock",
-            TokenLiteral::NativeFunction(Box::new(ClockCallable)),
-        );
+        globals
+            .borrow_mut()
+            .define("clock", Value::NativeFunction(Box::new(ClockCallable)));
 
         Self {
             environment,
@@ -66,7 +66,7 @@ impl Interpreter {
         Ok(())
     }
 
-    fn evaluate(&mut self, expr: &Expr) -> Result<TokenLiteral> {
+    fn evaluate(&mut self, expr: &Expr) -> Result<Value> {
         expr.accept(self)
     }
 
@@ -74,15 +74,15 @@ impl Interpreter {
         stmt.accept(self)
     }
 
-    fn is_truthy(literal: &TokenLiteral) -> bool {
+    fn is_truthy(literal: &Value) -> bool {
         match *literal {
-            TokenLiteral::Nil => false,
-            TokenLiteral::Boolean(value) => value,
+            Value::Nil => false,
+            Value::Boolean(value) => value,
             _ => true,
         }
     }
 
-    fn to_number(literal: TokenLiteral, token: &Token) -> Result<f64> {
+    fn to_number(literal: Value, token: &Token) -> Result<f64> {
         literal.try_into().map_err(|_| LoxError::RuntimeError {
             // TODO get rid of clone
             token: token.clone(),
@@ -90,47 +90,40 @@ impl Interpreter {
         })
     }
 
-    fn is_equal(a: TokenLiteral, b: TokenLiteral) -> bool {
+    fn is_equal(a: Value, b: Value) -> bool {
         match (a, b) {
-            (TokenLiteral::Nil, TokenLiteral::Nil) => true,
-            (TokenLiteral::Nil, _) => false,
-            (TokenLiteral::Boolean(v1), TokenLiteral::Boolean(v2)) => v1 == v2,
+            (Value::Nil, Value::Nil) => true,
+            (Value::Nil, _) => false,
+            (Value::Boolean(v1), Value::Boolean(v2)) => v1 == v2,
             #[allow(clippy::float_cmp)]
-            (TokenLiteral::Number(v1), TokenLiteral::Number(v2)) => v1 == v2,
-            (TokenLiteral::String(v1), TokenLiteral::String(v2)) => v1 == v2,
+            (Value::Number(v1), Value::Number(v2)) => v1 == v2,
+            (Value::String(v1), Value::String(v2)) => v1 == v2,
             (_, _) => false,
         }
     }
 }
 
-impl ExprVisitor<Result<TokenLiteral>> for Interpreter {
-    fn visit_binary_expr(
-        &mut self,
-        left: &Expr,
-        operator: &Token,
-        right: &Expr,
-    ) -> Result<TokenLiteral> {
+impl ExprVisitor<Result<Value>> for Interpreter {
+    fn visit_binary_expr(&mut self, left: &Expr, operator: &Token, right: &Expr) -> Result<Value> {
         let left_value = self.evaluate(left)?;
         let right_value = self.evaluate(right)?;
 
         Ok(match operator.kind {
-            TokenKind::Minus => TokenLiteral::Number(
+            TokenKind::Minus => Value::Number(
                 Interpreter::to_number(left_value, operator)?
                     - Interpreter::to_number(right_value, operator)?,
             ),
-            TokenKind::Slash => TokenLiteral::Number(
+            TokenKind::Slash => Value::Number(
                 Interpreter::to_number(left_value, operator)?
                     / Interpreter::to_number(right_value, operator)?,
             ),
-            TokenKind::Star => TokenLiteral::Number(
+            TokenKind::Star => Value::Number(
                 Interpreter::to_number(left_value, operator)?
                     * Interpreter::to_number(right_value, operator)?,
             ),
             TokenKind::Plus => match (left_value, right_value) {
-                (TokenLiteral::Number(l), TokenLiteral::Number(r)) => TokenLiteral::Number(l + r),
-                (TokenLiteral::String(l), TokenLiteral::String(r)) => {
-                    TokenLiteral::String(format!("{}{}", l, r))
-                }
+                (Value::Number(l), Value::Number(r)) => Value::Number(l + r),
+                (Value::String(l), Value::String(r)) => Value::String(format!("{}{}", l, r)),
                 _ => {
                     return Err(LoxError::RuntimeError {
                         // TODO get rid of clone
@@ -139,55 +132,51 @@ impl ExprVisitor<Result<TokenLiteral>> for Interpreter {
                     });
                 }
             },
-            TokenKind::Greater => TokenLiteral::Boolean(
+            TokenKind::Greater => Value::Boolean(
                 Interpreter::to_number(left_value, operator)?
                     > Interpreter::to_number(right_value, operator)?,
             ),
-            TokenKind::GreaterEqual => TokenLiteral::Boolean(
+            TokenKind::GreaterEqual => Value::Boolean(
                 Interpreter::to_number(left_value, operator)?
                     >= Interpreter::to_number(right_value, operator)?,
             ),
-            TokenKind::Less => TokenLiteral::Boolean(
+            TokenKind::Less => Value::Boolean(
                 Interpreter::to_number(left_value, operator)?
                     < Interpreter::to_number(right_value, operator)?,
             ),
-            TokenKind::LessEqual => TokenLiteral::Boolean(
+            TokenKind::LessEqual => Value::Boolean(
                 Interpreter::to_number(left_value, operator)?
                     <= Interpreter::to_number(right_value, operator)?,
             ),
-            TokenKind::BangEqual => {
-                TokenLiteral::Boolean(!Interpreter::is_equal(left_value, right_value))
-            }
-            TokenKind::EqualEqual => {
-                TokenLiteral::Boolean(Interpreter::is_equal(left_value, right_value))
-            }
+            TokenKind::BangEqual => Value::Boolean(!Interpreter::is_equal(left_value, right_value)),
+            TokenKind::EqualEqual => Value::Boolean(Interpreter::is_equal(left_value, right_value)),
             _ => unreachable!(),
         })
     }
 
-    fn visit_unary_expr(&mut self, operator: &Token, right: &Expr) -> Result<TokenLiteral> {
+    fn visit_unary_expr(&mut self, operator: &Token, right: &Expr) -> Result<Value> {
         let right_value = self.evaluate(right)?;
 
         Ok(match operator.kind {
-            TokenKind::Minus => TokenLiteral::Number(-f64::try_from(right_value).unwrap()),
-            TokenKind::Bang => TokenLiteral::Boolean(!Interpreter::is_truthy(&right_value)),
+            TokenKind::Minus => Value::Number(-f64::try_from(right_value).unwrap()),
+            TokenKind::Bang => Value::Boolean(!Interpreter::is_truthy(&right_value)),
             _ => unreachable!(),
         })
     }
 
-    fn visit_group_expr(&mut self, expr: &Expr) -> Result<TokenLiteral> {
+    fn visit_group_expr(&mut self, expr: &Expr) -> Result<Value> {
         self.evaluate(expr)
     }
 
-    fn visit_literal_expr(&mut self, literal: &TokenLiteral) -> Result<TokenLiteral> {
+    fn visit_literal_expr(&mut self, literal: &Value) -> Result<Value> {
         Ok(literal.clone())
     }
 
-    fn visit_variable_expr(&mut self, name: &Token) -> Result<TokenLiteral> {
+    fn visit_variable_expr(&mut self, name: &Token) -> Result<Value> {
         self.environment.borrow().get(name)
     }
 
-    fn visit_assign_expr(&mut self, name: &Token, expr: &Expr) -> Result<TokenLiteral> {
+    fn visit_assign_expr(&mut self, name: &Token, expr: &Expr) -> Result<Value> {
         let value = self.evaluate(expr)?;
         self.environment.borrow_mut().assign(name, &value)?;
 
@@ -199,7 +188,7 @@ impl ExprVisitor<Result<TokenLiteral>> for Interpreter {
         left: &Expr,
         operator: &Token,
         right: &Expr,
-    ) -> Result<TokenLiteral> {
+    ) -> Result<Value> {
         let left_value = self.evaluate(left)?;
         match operator.kind {
             TokenKind::Or => {
@@ -223,7 +212,7 @@ impl ExprVisitor<Result<TokenLiteral>> for Interpreter {
         callee: &Expr,
         arguments: &[Expr],
         paren: &Token,
-    ) -> Result<TokenLiteral> {
+    ) -> Result<Value> {
         let callee = self.evaluate(callee)?;
 
         let arguments = arguments
@@ -264,7 +253,7 @@ impl StmtVisitor<Result<()>> for Interpreter {
     fn visit_var_stmt(&mut self, name: &Token, initializer: Option<&Expr>) -> Result<()> {
         let value = match initializer {
             Some(v) => self.evaluate(v)?,
-            None => TokenLiteral::Nil,
+            None => Value::Nil,
         };
 
         self.environment.borrow_mut().define(&name.lexeme, value);
@@ -308,7 +297,7 @@ impl StmtVisitor<Result<()>> for Interpreter {
         parameters: &[Token],
         block: &[Stmt],
     ) -> Result<()> {
-        let function = TokenLiteral::Function(
+        let function = Value::Function(
             name.clone().into(),
             parameters.to_vec(),
             block.to_vec(),
@@ -323,7 +312,7 @@ impl StmtVisitor<Result<()>> for Interpreter {
     fn visit_return_stmt(&mut self, _keyword: &Token, value: Option<&Expr>) -> Result<()> {
         Err(LoxError::ReturnJump(match value {
             Some(v) => self.evaluate(v)?,
-            None => TokenLiteral::Nil,
+            None => Value::Nil,
         }))
     }
 }

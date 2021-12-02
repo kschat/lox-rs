@@ -2,13 +2,14 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{
     error::{LoxError, Result},
-    token::{Token, TokenLiteral},
+    token::Token,
+    value::Value,
 };
 
 #[derive(Debug)]
 pub struct Environment {
     enclosing: Option<Rc<RefCell<Environment>>>,
-    values: HashMap<String, TokenLiteral>,
+    values: HashMap<String, Value>,
 }
 
 impl Environment {
@@ -26,11 +27,11 @@ impl Environment {
         }))
     }
 
-    pub fn define(&mut self, name: &str, value: TokenLiteral) {
+    pub fn define(&mut self, name: &str, value: Value) {
         self.values.insert(name.into(), value);
     }
 
-    pub fn get(&self, name: &Token) -> Result<TokenLiteral> {
+    pub fn get(&self, name: &Token) -> Result<Value> {
         match self.values.get(&name.lexeme) {
             Some(value) => Ok(value.clone()),
             None => match &self.enclosing {
@@ -44,7 +45,7 @@ impl Environment {
         }
     }
 
-    pub fn assign(&mut self, name: &Token, value: &TokenLiteral) -> Result<()> {
+    pub fn assign(&mut self, name: &Token, value: &Value) -> Result<()> {
         if self.values.contains_key(&name.lexeme) {
             self.values.insert(name.lexeme.to_string(), value.clone());
 

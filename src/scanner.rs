@@ -1,7 +1,8 @@
 use crate::{
     error::{LoxError, Result, ScannerErrorDetails},
-    token::{Token, TokenLiteral},
+    token::Token,
     token_kind::TokenKind,
+    value::Value,
 };
 
 pub struct Scanner {
@@ -125,12 +126,12 @@ impl Scanner {
         self.tokens.push(self.create_token(kind, None));
     }
 
-    fn add_token_literal<T: Into<TokenLiteral>>(&mut self, kind: TokenKind, literal: T) {
+    fn add_token_literal<T: Into<Value>>(&mut self, kind: TokenKind, literal: T) {
         self.tokens
             .push(self.create_token(kind, Some(literal.into())));
     }
 
-    fn create_token(&self, kind: TokenKind, literal: Option<TokenLiteral>) -> Token {
+    fn create_token(&self, kind: TokenKind, literal: Option<Value>) -> Token {
         let lexeme = self.str_at(self.start, self.current).to_string();
         Token {
             kind,

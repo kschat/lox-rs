@@ -1,7 +1,4 @@
-use crate::{
-    stmt::Stmt,
-    token::{Token, TokenLiteral},
-};
+use crate::{stmt::Stmt, token::Token, value::Value};
 use std::io;
 use thiserror::Error;
 
@@ -48,7 +45,7 @@ pub enum LoxError {
     IncorrectArityError,
 
     #[error("Return jump signal")]
-    ReturnJump(TokenLiteral),
+    ReturnJump(Value),
 
     #[error(transparent)]
     Io(#[from] io::Error),
