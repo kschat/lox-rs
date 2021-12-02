@@ -1,20 +1,34 @@
+use std::{cell::RefCell, rc::Rc};
+
 use crate::{
+    callable::Callable,
     environment::Environment,
     error::{LoxError, Result},
     expr::{Expr, ExprVisitor},
+    native_functions::ClockCallable,
     stmt::{Stmt, StmtVisitor},
     token::{Token, TokenLiteral},
     token_kind::TokenKind,
 };
 
 pub struct Interpreter {
-    environment: Environment,
+    pub environment: Rc<RefCell<Environment>>,
+    pub globals: Rc<RefCell<Environment>>,
 }
 
 impl Interpreter {
     pub fn new() -> Self {
+        let globals = Environment::new();
+        let environment = globals.clone();
+
+        globals.borrow_mut().define(
+            "clock",
+            TokenLiteral::NativeFunction(Box::new(ClockCallable)),
+        );
+
         Self {
-            environment: Environment::new(),
+            environment,
+            globals,
         }
     }
 
@@ -30,6 +44,26 @@ impl Interpreter {
             0 => Ok(()),
             _ => Err(errors),
         }
+    }
+
+    pub(crate) fn execute_block(
+        &mut self,
+        statements: &[Stmt],
+        environment: Rc<RefCell<Environment>>,
+    ) -> Result<()> {
+        let previous = self.environment.clone();
+        self.environment = environment;
+
+        for statement in statements {
+            if let error @ Err(_) = self.execute(statement) {
+                self.environment = previous;
+                return error;
+            }
+        }
+
+        self.environment = previous;
+
+        Ok(())
     }
 
     fn evaluate(&mut self, expr: &Expr) -> Result<TokenLiteral> {
@@ -150,12 +184,12 @@ impl ExprVisitor<Result<TokenLiteral>> for Interpreter {
     }
 
     fn visit_variable_expr(&mut self, name: &Token) -> Result<TokenLiteral> {
-        self.environment.get(name)
+        self.environment.borrow().get(name)
     }
 
     fn visit_assign_expr(&mut self, name: &Token, expr: &Expr) -> Result<TokenLiteral> {
         let value = self.evaluate(expr)?;
-        self.environment.assign(name, &value)?;
+        self.environment.borrow_mut().assign(name, &value)?;
 
         Ok(value)
     }
@@ -183,6 +217,36 @@ impl ExprVisitor<Result<TokenLiteral>> for Interpreter {
 
         self.evaluate(right)
     }
+
+    fn visit_call_expr(
+        &mut self,
+        callee: &Expr,
+        arguments: &[Expr],
+        paren: &Token,
+    ) -> Result<TokenLiteral> {
+        let callee = self.evaluate(callee)?;
+
+        let arguments = arguments
+            .iter()
+            .map(|arg| self.evaluate(arg))
+            .collect::<Result<Vec<_>>>()?;
+
+        callee.call(self, &arguments).map_err(|error| match error {
+            LoxError::IncorrectArityError => LoxError::RuntimeError {
+                message: format!(
+                    "Expected {} arguments but got {}.",
+                    callee.arity(),
+                    arguments.len()
+                ),
+                token: paren.clone(),
+            },
+            LoxError::NotCallableError => LoxError::RuntimeError {
+                message: "Can only call functions and classes.".into(),
+                token: paren.clone(),
+            },
+            _ => error,
+        })
+    }
 }
 
 impl StmtVisitor<Result<()>> for Interpreter {
@@ -203,24 +267,16 @@ impl StmtVisitor<Result<()>> for Interpreter {
             None => TokenLiteral::Nil,
         };
 
-        self.environment.define(&name.lexeme, value);
+        self.environment.borrow_mut().define(&name.lexeme, value);
 
         Ok(())
     }
 
     fn visit_block_stmt(&mut self, statements: &[Stmt]) -> Result<()> {
-        self.environment.new_scope();
-
-        for statement in statements {
-            self.execute(statement).map_err(|error| {
-                self.environment.end_scope();
-                error
-            })?;
-        }
-
-        self.environment.end_scope();
-
-        Ok(())
+        self.execute_block(
+            statements,
+            Environment::new_with_parent(self.environment.clone()),
+        )
     }
 
     fn visit_if_stmt(
@@ -244,5 +300,36 @@ impl StmtVisitor<Result<()>> for Interpreter {
         }
 
         Ok(())
+    }
+
+    fn visit_function_stmt(
+        &mut self,
+        name: &Token,
+        parameters: &[Token],
+        block: &[Stmt],
+    ) -> Result<()> {
+        let function = TokenLiteral::Function(
+            name.clone().into(),
+            parameters.to_vec(),
+            block.to_vec(),
+            self.environment.clone(),
+        );
+
+        self.environment.borrow_mut().define(&name.lexeme, function);
+
+        Ok(())
+    }
+
+    fn visit_return_stmt(&mut self, _keyword: &Token, value: Option<&Expr>) -> Result<()> {
+        Err(LoxError::ReturnJump(match value {
+            Some(v) => self.evaluate(v)?,
+            None => TokenLiteral::Nil,
+        }))
+    }
+}
+
+impl Default for Interpreter {
+    fn default() -> Self {
+        Self::new()
     }
 }

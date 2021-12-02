@@ -13,10 +13,12 @@ use token_kind::TokenKind;
 use crate::error::Result;
 use crate::scanner::Scanner;
 
+mod callable;
 mod environment;
 mod error;
 mod expr;
 mod interpreter;
+mod native_functions;
 mod parser;
 mod scanner;
 mod stmt;

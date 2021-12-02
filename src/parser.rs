@@ -6,6 +6,8 @@ use crate::{
     token_kind::TokenKind,
 };
 
+const MAX_ARGUMENT_COUNT: usize = 255;
+
 /// Result used internally to interupt parsing until synchronization can occur
 type ParserResult<T> = Result<T, ParserErrorDetails>;
 
@@ -13,11 +15,14 @@ type ParserResult<T> = Result<T, ParserErrorDetails>;
 ///
 /// program             -> declaration* EOF ;
 ///
-/// declaration         -> varDeclaration | statement
-/// varDeclaration      -> "var" IDENTIFIER ("=" expression)? ";" ;
+/// declaration         -> varDeclaration | functionDeclaration | statement ;
+/// varDeclaration      -> "var" IDENTIFIER ( "=" expression )? ";" ;
+/// functionDeclaration -> "fun" function ;
+/// function            -> IDENTIFIER "(" parameters? ")" block ;
+/// parameters          -> IDENTIFIER ( "," IDENTIFIER )* ;
 ///
 /// statement           -> expressionStatement | printStatement | block
-///                      | ifStatement | whileStatement ;
+///                      | ifStatement | whileStatement | returnStatment ;
 /// ifStatement         -> "if" "(" expression ")" statement
 ///                      ( "else" statement )? ;
 /// whileStatement      -> "while" "(" expression ")" statement ;
@@ -27,6 +32,7 @@ type ParserResult<T> = Result<T, ParserErrorDetails>;
 /// expressionStatement -> expression ";" ;
 /// printStatement      -> "print" expression ";" ;
 /// block               -> "{" declaration* "}" ;
+/// returnStatment      -> "return" expression? ";" ;
 ///
 /// expression          -> assignment ;
 /// assignment          -> IDENTIFIER "=" assignment | logicOr ;
@@ -36,7 +42,9 @@ type ParserResult<T> = Result<T, ParserErrorDetails>;
 /// comparison          -> term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
 /// term                -> factor ( ( "-" | "+" ) factor )* ;
 /// factor              -> unary ( ( "/" | "*" ) unary )* ;
-/// unary               -> ( "!" | "-" ) unary | primary ;
+/// unary               -> ( "!" | "-" ) unary | functionCall ;
+/// functionCall        -> primary ( "(" arguments? ")" )* ;
+/// arguments           -> expression ( "," expression )* ;
 /// primary             -> NUMBER | STRING | "nil" | "true" | "false"
 ///                      | "(" expression ")" | IDENTIFIER ;
 pub struct Parser {
@@ -84,6 +92,10 @@ impl Parser {
             return self.var_declaration();
         }
 
+        if self.matches(&[TokenKind::Fun]) {
+            return self.function("function");
+        }
+
         self.statement()
     }
 
@@ -106,6 +118,55 @@ impl Parser {
         Ok(Stmt::Var(identifier, initializer))
     }
 
+    fn function(&mut self, kind: &str) -> ParserResult<Stmt> {
+        let name = self
+            .try_consume(TokenKind::Identifier, &format!("Expected {} name.", kind))?
+            .clone();
+
+        self.try_consume(
+            TokenKind::LeftParen,
+            &format!("Expected '(' after {} name.", kind),
+        )?;
+
+        let parameters = match self.check(TokenKind::RightParen) {
+            true => vec![],
+            false => self.parameters()?,
+        };
+
+        self.try_consume(TokenKind::RightParen, "Expeced ')' after parameters.")?;
+
+        self.try_consume(
+            TokenKind::LeftBrace,
+            &format!("Expected '{{' before {} body.", kind),
+        )?;
+
+        let body = self.block_statements()?;
+
+        Ok(Stmt::Function(name, parameters, body))
+    }
+
+    fn parameters(&mut self) -> ParserResult<Vec<Token>> {
+        let mut parameters = vec![];
+
+        loop {
+            if parameters.len() >= MAX_ARGUMENT_COUNT {
+                self.report_warning(
+                    self.peek().clone(),
+                    &format!("Can't have more than {} arguments.", MAX_ARGUMENT_COUNT),
+                );
+            }
+
+            parameters.push(
+                self.try_consume(TokenKind::Identifier, "Expeced parameter name")?
+                    .clone(),
+            );
+
+            if !self.matches(&[TokenKind::Comma]) {
+                return Ok(parameters);
+            }
+        }
+    }
+
     fn statement(&mut self) -> ParserResult<Stmt> {
         if self.matches(&[TokenKind::Print]) {
             return self.print_statement();
@@ -125,6 +186,10 @@ impl Parser {
 
         if self.matches(&[TokenKind::For]) {
             return self.for_statement();
+        }
+
+        if self.matches(&[TokenKind::Return]) {
+            return self.return_statement();
         }
 
         self.expression_statement()
@@ -199,6 +264,19 @@ impl Parser {
         })
     }
 
+    fn return_statement(&mut self) -> ParserResult<Stmt> {
+        // TODO get rid of clone
+        let keyword = self.previous().clone();
+        let value = match self.check(TokenKind::Semicolon) {
+            false => Some(self.expression()?),
+            true => None,
+        };
+
+        self.try_consume(TokenKind::Semicolon, "Expected ';' after return.")?;
+
+        Ok(Stmt::Return(keyword, value))
+    }
+
     fn expression_statement(&mut self) -> ParserResult<Stmt> {
         let value = self.expression()?;
         self.try_consume(TokenKind::Semicolon, "Expected ';' after expression.")?;
@@ -207,6 +285,10 @@ impl Parser {
     }
 
     fn block(&mut self) -> ParserResult<Stmt> {
+        Ok(Stmt::Block(self.block_statements()?))
+    }
+
+    fn block_statements(&mut self) -> ParserResult<Vec<Stmt>> {
         let mut statements = vec![];
         while !self.check(TokenKind::RightBrace) && !self.is_at_end() {
             statements.push(self.declaration()?);
@@ -214,7 +296,7 @@ impl Parser {
 
         self.try_consume(TokenKind::RightBrace, "Expected '}' after block.")?;
 
-        Ok(Stmt::Block(statements))
+        Ok(statements)
     }
 
     fn expression(&mut self) -> ParserResult<Expr> {
@@ -233,7 +315,7 @@ impl Parser {
                 return Ok(Expr::Assign(name, value.into()));
             }
 
-            self.report_error(&equal, "Invalid assignment target.");
+            self.parser_error(equal, "Invalid assignment target.");
         }
 
         Ok(expr)
@@ -332,7 +414,48 @@ impl Parser {
             return Ok(Expr::Unary(operator, right.into()));
         }
 
-        self.primary()
+        self.function_call()
+    }
+
+    fn function_call(&mut self) -> ParserResult<Expr> {
+        let mut expr = self.primary()?;
+
+        loop {
+            match self.matches(&[TokenKind::LeftParen]) {
+                true => expr = self.finish_call(expr)?,
+                false => return Ok(expr),
+            }
+        }
+    }
+
+    fn finish_call(&mut self, callee: Expr) -> ParserResult<Expr> {
+        let arguments = match self.check(TokenKind::RightParen) {
+            true => vec![],
+            false => self.arguments()?,
+        };
+
+        let right_paren =
+            self.try_consume(TokenKind::RightParen, "Expected ')' after arguments.")?;
+
+        // TODO get rid of clone
+        Ok(Expr::Call(callee.into(), arguments, right_paren.clone()))
+    }
+
+    fn arguments(&mut self) -> ParserResult<Vec<Expr>> {
+        let mut args = vec![self.expression()?];
+
+        while self.matches(&[TokenKind::Comma]) {
+            if args.len() >= MAX_ARGUMENT_COUNT {
+                self.report_warning(
+                    self.peek().clone(),
+                    &format!("Can't have more than {} arguments.", MAX_ARGUMENT_COUNT),
+                );
+            }
+
+            args.push(self.expression()?);
+        }
+
+        Ok(args)
     }
 
     fn primary(&mut self) -> ParserResult<Expr> {
@@ -368,7 +491,7 @@ impl Parser {
         }
 
         // TODO get rid of clone
-        Err(self.report_error(&self.peek().clone(), "Expected expression."))
+        Err(self.parser_error(self.peek().clone(), "Expected expression."))
     }
 
     fn synchronize(&mut self) {
@@ -408,14 +531,19 @@ impl Parser {
         }
 
         // TODO get rid of clone
-        Err(self.report_error(&self.peek().clone(), message))
+        Err(self.parser_error(self.peek().clone(), message))
     }
 
-    fn report_error(&mut self, token: &Token, message: &str) -> ParserErrorDetails {
+    fn parser_error(&mut self, token: Token, message: &str) -> ParserErrorDetails {
         ParserErrorDetails {
             message: message.into(),
-            token: token.clone(),
+            token,
         }
+    }
+
+    fn report_warning(&mut self, token: Token, message: &str) {
+        let error = self.parser_error(token, message);
+        self.parsing_errors.push(error);
     }
 
     fn check(&self, kind: TokenKind) -> bool {

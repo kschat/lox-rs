@@ -1,6 +1,6 @@
 use crate::{expr::Expr, token::Token};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Stmt {
     Expression(Expr),
     Print(Expr),
@@ -8,6 +8,8 @@ pub enum Stmt {
     Block(Vec<Stmt>),
     If(Expr, Box<Stmt>, Option<Box<Stmt>>),
     While(Expr, Box<Stmt>),
+    Function(Token, Vec<Token>, Vec<Stmt>),
+    Return(Token, Option<Expr>),
 }
 
 impl Stmt {
@@ -21,6 +23,10 @@ impl Stmt {
                 visitor.visit_if_stmt(condition, then_branch, else_branch.as_deref())
             }
             Stmt::While(condition, body) => visitor.visit_while_stmt(condition, body),
+            Stmt::Function(name, parameters, body) => {
+                visitor.visit_function_stmt(name, parameters, body)
+            }
+            Stmt::Return(keyword, value) => visitor.visit_return_stmt(keyword, value.as_ref()),
         }
     }
 }
@@ -37,4 +43,6 @@ pub trait StmtVisitor<T> {
         else_branch: Option<&Stmt>,
     ) -> T;
     fn visit_while_stmt(&mut self, condition: &Expr, body: &Stmt) -> T;
+    fn visit_function_stmt(&mut self, name: &Token, parameters: &[Token], block: &[Stmt]) -> T;
+    fn visit_return_stmt(&mut self, keyword: &Token, value: Option<&Expr>) -> T;
 }

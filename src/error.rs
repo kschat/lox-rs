@@ -1,4 +1,7 @@
-use crate::{stmt::Stmt, token::Token};
+use crate::{
+    stmt::Stmt,
+    token::{Token, TokenLiteral},
+};
 use std::io;
 use thiserror::Error;
 
@@ -37,6 +40,15 @@ pub enum LoxError {
 
     #[error("Runtime Error: {message}")]
     RuntimeError { message: String, token: Token },
+
+    #[error("Can only call functions and classes.")]
+    NotCallableError,
+
+    #[error("Arguments did not match parameters")]
+    IncorrectArityError,
+
+    #[error("Return jump signal")]
+    ReturnJump(TokenLiteral),
 
     #[error(transparent)]
     Io(#[from] io::Error),

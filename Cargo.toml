@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.45"
 thiserror = "1.0.30"
+dyn-clone = "1.0.4"

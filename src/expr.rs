@@ -1,6 +1,6 @@
 use crate::token::{Token, TokenLiteral};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Expr {
     Binary(Box<Expr>, Token, Box<Expr>),
     Unary(Token, Box<Expr>),
@@ -9,6 +9,7 @@ pub enum Expr {
     Variable(Token),
     Assign(Token, Box<Expr>),
     Logical(Box<Expr>, Token, Box<Expr>),
+    Call(Box<Expr>, Vec<Expr>, Token),
 }
 
 impl Expr {
@@ -23,6 +24,9 @@ impl Expr {
             Expr::Logical(left, operator, right) => {
                 visitor.visit_logicial_expr(left, operator, right)
             }
+            Expr::Call(callee, arguments, paren) => {
+                visitor.visit_call_expr(callee, arguments, paren)
+            }
         }
     }
 }
@@ -35,4 +39,5 @@ pub trait ExprVisitor<T> {
     fn visit_variable_expr(&mut self, name: &Token) -> T;
     fn visit_assign_expr(&mut self, name: &Token, value: &Expr) -> T;
     fn visit_logicial_expr(&mut self, left: &Expr, operator: &Token, right: &Expr) -> T;
+    fn visit_call_expr(&mut self, callee: &Expr, arguments: &[Expr], paren: &Token) -> T;
 }

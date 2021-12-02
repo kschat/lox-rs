@@ -1,7 +1,13 @@
-print "hi" or 2;
-print nil or "yes";
+fun makeCounter() {
+  var i = 0;
+  fun count() {
+    i = i + 1;
+    print i;
+  }
 
-
-for (var i = 0; i <= 10; i = i + 1) {
-  print i;
+  return count;
 }
+
+var counter = makeCounter();
+counter();
+counter();
