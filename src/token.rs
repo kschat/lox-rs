@@ -4,6 +4,7 @@ use crate::{token_kind::TokenKind, value::Value};
 
 #[derive(Debug, Clone)]
 pub struct Token {
+    pub id: usize,
     pub kind: TokenKind,
     pub lexeme: String,
     pub literal: Option<Value>,

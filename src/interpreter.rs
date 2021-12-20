@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{
     callable::Callable,
@@ -15,6 +15,7 @@ use crate::{
 pub struct Interpreter {
     pub environment: Rc<RefCell<Environment>>,
     pub globals: Rc<RefCell<Environment>>,
+    locals: HashMap<usize, usize>,
 }
 
 impl Interpreter {
@@ -29,6 +30,7 @@ impl Interpreter {
         Self {
             environment,
             globals,
+            locals: HashMap::new(),
         }
     }
 
@@ -66,6 +68,10 @@ impl Interpreter {
         Ok(())
     }
 
+    pub(crate) fn resolve(&mut self, name: &Token, depth: usize) {
+        self.locals.insert(name.id, depth);
+    }
+
     fn evaluate(&mut self, expr: &Expr) -> Result<Value> {
         expr.accept(self)
     }
@@ -99,6 +105,13 @@ impl Interpreter {
             (Value::Number(v1), Value::Number(v2)) => v1 == v2,
             (Value::String(v1), Value::String(v2)) => v1 == v2,
             (_, _) => false,
+        }
+    }
+
+    fn lookup_variable(&mut self, name: &Token) -> Result<Value> {
+        match self.locals.get(&name.id) {
+            Some(distance) => self.environment.borrow().get_at(*distance, name),
+            None => self.globals.borrow().get(name),
         }
     }
 }
@@ -173,12 +186,19 @@ impl ExprVisitor<Result<Value>> for Interpreter {
     }
 
     fn visit_variable_expr(&mut self, name: &Token) -> Result<Value> {
-        self.environment.borrow().get(name)
+        self.lookup_variable(name)
     }
 
     fn visit_assign_expr(&mut self, name: &Token, expr: &Expr) -> Result<Value> {
         let value = self.evaluate(expr)?;
-        self.environment.borrow_mut().assign(name, &value)?;
+
+        match self.locals.get(&name.id) {
+            None => self.globals.borrow_mut().assign(name, &value)?,
+            Some(distance) => self
+                .environment
+                .borrow_mut()
+                .assign_at(*distance, name, &value)?,
+        };
 
         Ok(value)
     }

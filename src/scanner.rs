@@ -33,6 +33,7 @@ impl Scanner {
         }
 
         self.tokens.push(Token {
+            id: self.current,
             kind: TokenKind::Eof,
             lexeme: "".into(),
             literal: None,
@@ -134,6 +135,7 @@ impl Scanner {
     fn create_token(&self, kind: TokenKind, literal: Option<Value>) -> Token {
         let lexeme = self.str_at(self.start, self.current).to_string();
         Token {
+            id: self.current,
             kind,
             lexeme,
             literal,

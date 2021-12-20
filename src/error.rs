@@ -19,6 +19,13 @@ pub struct ParserErrorDetails {
 }
 
 #[derive(Error, Debug)]
+#[error("{message}")]
+pub struct ResolverErrorDetails {
+    pub message: String,
+    pub token: Token,
+}
+
+#[derive(Error, Debug)]
 pub enum LoxError {
     #[error("Scanning Error: {details:?}")]
     ScanningError {
@@ -34,6 +41,9 @@ pub enum LoxError {
         statements: Vec<Stmt>,
         details: Vec<ParserErrorDetails>,
     },
+
+    #[error("Resolution Error: {0:?}")]
+    ResolutionError(Vec<ResolverErrorDetails>),
 
     #[error("Runtime Error: {message}")]
     RuntimeError { message: String, token: Token },

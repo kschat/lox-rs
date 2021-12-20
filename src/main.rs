@@ -5,9 +5,10 @@ use std::{
     process,
 };
 
-use error::{LoxError, ParserErrorDetails, ScannerErrorDetails};
+use error::{LoxError, ParserErrorDetails, ResolverErrorDetails, ScannerErrorDetails};
 use interpreter::Interpreter;
 use parser::Parser;
+use resolver::Resolver;
 use token_kind::TokenKind;
 
 use crate::error::Result;
@@ -20,6 +21,7 @@ mod expr;
 mod interpreter;
 mod native_functions;
 mod parser;
+mod resolver;
 mod scanner;
 mod stmt;
 mod token;
@@ -103,6 +105,16 @@ impl Lox {
             return;
         }
 
+        match Resolver::new(&mut self.interpreter).resolve(&statements) {
+            Err(LoxError::ResolutionError(details)) => self.report_resolution_error(&details),
+            Err(error) => panic!("Unexpected error: {}", error),
+            _ => (),
+        };
+
+        if self.had_error {
+            return;
+        }
+
         if let Err(errors) = self.interpreter.interpret(statements) {
             for error in errors {
                 self.runtime_error(&error);
@@ -117,6 +129,17 @@ impl Lox {
     }
 
     fn report_parse_error(&mut self, details: &[ParserErrorDetails]) {
+        for detail in details {
+            let at = match detail.token.kind {
+                TokenKind::Eof => " at end".to_string(),
+                _ => format!(" at '{}'", detail.token.lexeme),
+            };
+
+            self.report_error(detail.token.line, &at, &detail.message)
+        }
+    }
+
+    fn report_resolution_error(&mut self, details: &[ResolverErrorDetails]) {
         for detail in details {
             let at = match detail.token.kind {
                 TokenKind::Eof => " at end".to_string(),
