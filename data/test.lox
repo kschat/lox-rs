@@ -11,3 +11,17 @@ fun makeCounter() {
 var counter = makeCounter();
 print counter();
 print counter();
+
+class Foo {
+  init(name) {
+    this.name = name;
+    return;
+  }
+
+  bar() { return this.name; }
+}
+
+print Foo;
+var foo = Foo("kyle");
+print foo;
+print foo.bar();

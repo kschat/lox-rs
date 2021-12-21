@@ -1,7 +1,7 @@
 use crate::{
     error::{LoxError, Result},
     interpreter::Interpreter,
-    value::Value,
+    value::{LoxInstance, Value},
 };
 
 use dyn_clone::DynClone;
@@ -24,6 +24,8 @@ pub trait Callable: DynClone + Debug {
 
         Ok(())
     }
+
+    fn bind(&self, instance: &LoxInstance) -> Result<Value>;
 }
 
 dyn_clone::clone_trait_object!(Callable);

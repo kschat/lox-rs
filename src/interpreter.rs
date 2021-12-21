@@ -9,7 +9,7 @@ use crate::{
     stmt::{Stmt, StmtVisitor},
     token::Token,
     token_kind::TokenKind,
-    value::Value,
+    value::{LoxClass, Value},
 };
 
 pub struct Interpreter {
@@ -256,6 +256,34 @@ impl ExprVisitor<Result<Value>> for Interpreter {
             _ => error,
         })
     }
+
+    fn visit_get_expr(&mut self, object: &Expr, name: &Token) -> Result<Value> {
+        match self.evaluate(object)? {
+            Value::Instance(instance) => instance.get(name),
+            _ => Err(LoxError::RuntimeError {
+                message: "Only instances have properties.".into(),
+                token: name.clone(),
+            }),
+        }
+    }
+
+    fn visit_set_expr(&mut self, object: &Expr, name: &Token, value: &Expr) -> Result<Value> {
+        match self.evaluate(object)? {
+            Value::Instance(mut instance) => {
+                let value = self.evaluate(value)?;
+                instance.set(name, &value);
+                Ok(value)
+            }
+            _ => Err(LoxError::RuntimeError {
+                message: "Only instances have fields.".into(),
+                token: name.clone(),
+            }),
+        }
+    }
+
+    fn visit_this_expr(&mut self, keyword: &Token) -> Result<Value> {
+        self.lookup_variable(keyword)
+    }
 }
 
 impl StmtVisitor<Result<()>> for Interpreter {
@@ -322,6 +350,7 @@ impl StmtVisitor<Result<()>> for Interpreter {
             parameters.to_vec(),
             block.to_vec(),
             self.environment.clone(),
+            false,
         );
 
         self.environment.borrow_mut().define(&name.lexeme, function);
@@ -334,6 +363,38 @@ impl StmtVisitor<Result<()>> for Interpreter {
             Some(v) => self.evaluate(v)?,
             None => Value::Nil,
         }))
+    }
+
+    fn visit_class_stmt(&mut self, name: &Token, methods: &[Stmt]) -> Result<()> {
+        self.environment
+            .borrow_mut()
+            .define(&name.lexeme, Value::Nil);
+
+        let methods = methods
+            .iter()
+            .fold(HashMap::new(), |mut acc, method| match method {
+                Stmt::Function(name, parameters, block) => {
+                    acc.insert(
+                        name.lexeme.to_string(),
+                        Value::Function(
+                            name.clone().into(),
+                            parameters.clone(),
+                            block.clone(),
+                            self.environment.clone(),
+                            name.lexeme == "init",
+                        ),
+                    );
+
+                    acc
+                }
+                _ => unreachable!(),
+            });
+
+        let class = Value::Class(LoxClass::new(name.lexeme.clone(), methods));
+
+        self.environment.borrow_mut().assign(name, &class)?;
+
+        Ok(())
     }
 }
 

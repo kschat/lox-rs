@@ -1,6 +1,11 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::{callable::Callable, error::Result, interpreter::Interpreter, value::Value};
+use crate::{
+    callable::Callable,
+    error::{LoxError, Result},
+    interpreter::Interpreter,
+    value::{LoxInstance, Value},
+};
 
 #[derive(Debug, Clone)]
 pub struct ClockCallable;
@@ -17,5 +22,9 @@ impl Callable for ClockCallable {
 
     fn arity(&self) -> usize {
         0
+    }
+
+    fn bind(&self, _instance: &LoxInstance) -> Result<Value> {
+        Err(LoxError::NotBindableError)
     }
 }

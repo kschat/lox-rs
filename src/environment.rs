@@ -59,6 +59,18 @@ impl Environment {
         }
     }
 
+    pub fn get_keyword_at(&self, distance: usize, name: &str) -> Result<Value> {
+        match distance {
+            0 => Ok(self.values.get(name).unwrap().clone()),
+            _ => match &self.enclosing {
+                Some(enclosing) => enclosing.borrow().get_keyword_at(distance - 1, name),
+                None => Err(LoxError::UnresolvedKeywordError {
+                    keyword: name.to_string(),
+                }),
+            },
+        }
+    }
+
     pub fn assign(&mut self, name: &Token, value: &Value) -> Result<()> {
         if self.values.contains_key(&name.lexeme) {
             self.values.insert(name.lexeme.to_string(), value.clone());

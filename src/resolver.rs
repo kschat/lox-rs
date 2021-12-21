@@ -14,6 +14,7 @@ pub struct Resolver<'a> {
     interpreter: &'a mut Interpreter,
     scopes: Stack<HashMap<String, bool>>,
     current_function_kind: Option<FunctionKind>,
+    current_class_kind: Option<ClassKind>,
     errors: Vec<ResolverErrorDetails>,
 }
 
@@ -23,6 +24,7 @@ impl<'a> Resolver<'a> {
             interpreter,
             scopes: Stack::new(),
             current_function_kind: None,
+            current_class_kind: None,
             errors: vec![],
         }
     }
@@ -168,6 +170,29 @@ impl<'a> ExprVisitor<Result<()>> for Resolver<'a> {
 
         Ok(())
     }
+
+    fn visit_get_expr(&mut self, object: &Expr, _name: &Token) -> Result<()> {
+        self.resolve_expression(object)?;
+        Ok(())
+    }
+
+    fn visit_set_expr(&mut self, object: &Expr, _name: &Token, value: &Expr) -> Result<()> {
+        self.resolve_expression(value)?;
+        self.resolve_expression(object)?;
+        Ok(())
+    }
+
+    fn visit_this_expr(&mut self, keyword: &Token) -> Result<()> {
+        match self.current_class_kind {
+            Some(_) => self.resolve_local(keyword),
+            None => self.errors.push(ResolverErrorDetails {
+                message: "Can't use 'this' outside of a class.".into(),
+                token: keyword.clone(),
+            }),
+        };
+
+        Ok(())
+    }
 }
 
 impl<'a> StmtVisitor<Result<()>> for Resolver<'a> {
@@ -240,8 +265,47 @@ impl<'a> StmtVisitor<Result<()>> for Resolver<'a> {
         }
 
         if let Some(value) = value {
+            if let Some(FunctionKind::Initializer) = self.current_function_kind {
+                self.errors.push(ResolverErrorDetails {
+                    message: "Can't return a value from an initializer.".into(),
+                    token: keyword.clone(),
+                });
+            }
+
             self.resolve_expression(value)?;
         }
+
+        Ok(())
+    }
+
+    fn visit_class_stmt(&mut self, name: &Token, methods: &[Stmt]) -> Result<()> {
+        let enclosing_class_kind = self.current_class_kind;
+        self.current_class_kind = Some(ClassKind::Class);
+
+        self.declare(name);
+        self.begin_scope();
+        self.scopes
+            .peek_mut()
+            .expect("Unexpected global scope")
+            .insert("this".into(), true);
+
+        for method in methods {
+            match method {
+                Stmt::Function(name, parameters, block) => {
+                    let kind = match name.lexeme == "init" {
+                        true => FunctionKind::Initializer,
+                        false => FunctionKind::Method,
+                    };
+
+                    self.resolve_function(kind, parameters, block)?;
+                }
+                _ => unreachable!(),
+            };
+        }
+
+        self.end_scope();
+        self.define(name);
+        self.current_class_kind = enclosing_class_kind;
 
         Ok(())
     }
@@ -250,6 +314,13 @@ impl<'a> StmtVisitor<Result<()>> for Resolver<'a> {
 #[derive(Debug, Clone, Copy)]
 enum FunctionKind {
     Function,
+    Method,
+    Initializer,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ClassKind {
+    Class,
 }
 
 struct Stack<T>(Vec<T>);

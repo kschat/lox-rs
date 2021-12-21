@@ -10,6 +10,7 @@ pub enum Stmt {
     While(Expr, Box<Stmt>),
     Function(Token, Vec<Token>, Vec<Stmt>),
     Return(Token, Option<Expr>),
+    Class(Token, Vec<Stmt>),
 }
 
 impl Stmt {
@@ -27,6 +28,7 @@ impl Stmt {
                 visitor.visit_function_stmt(name, parameters, body)
             }
             Stmt::Return(keyword, value) => visitor.visit_return_stmt(keyword, value.as_ref()),
+            Stmt::Class(name, methods) => visitor.visit_class_stmt(name, methods),
         }
     }
 }
@@ -45,4 +47,5 @@ pub trait StmtVisitor<T> {
     fn visit_while_stmt(&mut self, condition: &Expr, body: &Stmt) -> T;
     fn visit_function_stmt(&mut self, name: &Token, parameters: &[Token], block: &[Stmt]) -> T;
     fn visit_return_stmt(&mut self, keyword: &Token, value: Option<&Expr>) -> T;
+    fn visit_class_stmt(&mut self, name: &Token, methods: &[Stmt]) -> T;
 }

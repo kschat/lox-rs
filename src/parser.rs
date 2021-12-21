@@ -16,7 +16,9 @@ type ParserResult<T> = Result<T, ParserErrorDetails>;
 ///
 /// program             -> declaration* EOF ;
 ///
-/// declaration         -> varDeclaration | functionDeclaration | statement ;
+/// declaration         -> classDeclaration | varDeclaration
+///                      | functionDeclaration | statement ;
+/// classDeclaration    -> "class" IDENTIFIER "{" function* "}" ;
 /// varDeclaration      -> "var" IDENTIFIER ( "=" expression )? ";" ;
 /// functionDeclaration -> "fun" function ;
 /// function            -> IDENTIFIER "(" parameters? ")" block ;
@@ -36,15 +38,15 @@ type ParserResult<T> = Result<T, ParserErrorDetails>;
 /// returnStatment      -> "return" expression? ";" ;
 ///
 /// expression          -> assignment ;
-/// assignment          -> IDENTIFIER "=" assignment | logicOr ;
+/// assignment          -> ( call "." )? IDENTIFIER "=" assignment | logicOr ;
 /// logicOr             -> logicAnd ( "or" logicAnd )* ;
 /// logicAnd            -> equality ( "and" equality )* ;
 /// equality            -> comparison ( ( "==" | "!=" ) comparison )* ;
 /// comparison          -> term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
 /// term                -> factor ( ( "-" | "+" ) factor )* ;
 /// factor              -> unary ( ( "/" | "*" ) unary )* ;
-/// unary               -> ( "!" | "-" ) unary | functionCall ;
-/// functionCall        -> primary ( "(" arguments? ")" )* ;
+/// unary               -> ( "!" | "-" ) unary | call ;
+/// call                -> primary ( "(" arguments? ")" | "." IDENTIFIER )* ;
 /// arguments           -> expression ( "," expression )* ;
 /// primary             -> NUMBER | STRING | "nil" | "true" | "false"
 ///                      | "(" expression ")" | IDENTIFIER ;
@@ -89,6 +91,10 @@ impl Parser {
     }
 
     fn try_declaration(&mut self) -> ParserResult<Stmt> {
+        if self.matches(&[TokenKind::Class]) {
+            return self.class_declaration();
+        }
+
         if self.matches(&[TokenKind::Var]) {
             return self.var_declaration();
         }
@@ -98,6 +104,23 @@ impl Parser {
         }
 
         self.statement()
+    }
+
+    fn class_declaration(&mut self) -> ParserResult<Stmt> {
+        let name = self
+            .try_consume(TokenKind::Identifier, "Expected class name.")?
+            .clone();
+
+        self.try_consume(TokenKind::LeftBrace, "Expected '{' before class body.")?;
+
+        let mut methods = vec![];
+        while !self.check(TokenKind::RightBrace) && !self.is_at_end() {
+            methods.push(self.function("method")?);
+        }
+
+        self.try_consume(TokenKind::RightBrace, "Expected '}' after class body.")?;
+
+        Ok(Stmt::Class(name, methods))
     }
 
     fn var_declaration(&mut self) -> ParserResult<Stmt> {
@@ -316,6 +339,10 @@ impl Parser {
                 return Ok(Expr::Assign(name, value.into()));
             }
 
+            if let Expr::Get(object, name) = expr {
+                return Ok(Expr::Set(object, name, value.into()));
+            }
+
             self.parser_error(equal, "Invalid assignment target.");
         }
 
@@ -415,17 +442,29 @@ impl Parser {
             return Ok(Expr::Unary(operator, right.into()));
         }
 
-        self.function_call()
+        self.call()
     }
 
-    fn function_call(&mut self) -> ParserResult<Expr> {
+    fn call(&mut self) -> ParserResult<Expr> {
         let mut expr = self.primary()?;
 
         loop {
-            match self.matches(&[TokenKind::LeftParen]) {
-                true => expr = self.finish_call(expr)?,
-                false => return Ok(expr),
+            if self.matches(&[TokenKind::LeftParen]) {
+                expr = self.finish_call(expr)?;
+                continue;
             }
+
+            if self.matches(&[TokenKind::Dot]) {
+                let name = self
+                    .try_consume(TokenKind::Identifier, "Expected property name after '.'.")?
+                    .clone();
+
+                expr = Expr::Get(expr.into(), name);
+
+                continue;
+            }
+
+            return Ok(expr);
         }
     }
 
@@ -484,6 +523,10 @@ impl Parser {
             self.try_consume(TokenKind::RightParen, "Expected ')' after expression.")?;
 
             return Ok(Expr::Grouping(expr.into()));
+        }
+
+        if self.matches(&[TokenKind::This]) {
+            return Ok(Expr::This(self.previous().clone()));
         }
 
         if self.matches(&[TokenKind::Identifier]) {

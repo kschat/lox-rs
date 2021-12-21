@@ -10,6 +10,9 @@ pub enum Expr {
     Assign(Token, Box<Expr>),
     Logical(Box<Expr>, Token, Box<Expr>),
     Call(Box<Expr>, Vec<Expr>, Token),
+    Get(Box<Expr>, Token),
+    Set(Box<Expr>, Token, Box<Expr>),
+    This(Token),
 }
 
 impl Expr {
@@ -27,6 +30,9 @@ impl Expr {
             Expr::Call(callee, arguments, paren) => {
                 visitor.visit_call_expr(callee, arguments, paren)
             }
+            Expr::Get(object, name) => visitor.visit_get_expr(object, name),
+            Expr::Set(object, name, value) => visitor.visit_set_expr(object, name, value),
+            Expr::This(keyword) => visitor.visit_this_expr(keyword),
         }
     }
 }
@@ -40,4 +46,7 @@ pub trait ExprVisitor<T> {
     fn visit_assign_expr(&mut self, name: &Token, value: &Expr) -> T;
     fn visit_logicial_expr(&mut self, left: &Expr, operator: &Token, right: &Expr) -> T;
     fn visit_call_expr(&mut self, callee: &Expr, arguments: &[Expr], paren: &Token) -> T;
+    fn visit_get_expr(&mut self, object: &Expr, name: &Token) -> T;
+    fn visit_set_expr(&mut self, object: &Expr, name: &Token, value: &Expr) -> T;
+    fn visit_this_expr(&mut self, keyword: &Token) -> T;
 }

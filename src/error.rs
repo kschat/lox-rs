@@ -48,8 +48,14 @@ pub enum LoxError {
     #[error("Runtime Error: {message}")]
     RuntimeError { message: String, token: Token },
 
+    #[error("Couldn't resolve '{keyword}'.")]
+    UnresolvedKeywordError { keyword: String },
+
     #[error("Can only call functions and classes.")]
     NotCallableError,
+
+    #[error("Can only bind functions.")]
+    NotBindableError,
 
     #[error("Arguments did not match parameters")]
     IncorrectArityError,
