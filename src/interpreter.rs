@@ -80,34 +80,6 @@ impl Interpreter {
         stmt.accept(self)
     }
 
-    fn is_truthy(literal: &Value) -> bool {
-        match *literal {
-            Value::Nil => false,
-            Value::Boolean(value) => value,
-            _ => true,
-        }
-    }
-
-    fn to_number(literal: Value, token: &Token) -> Result<f64> {
-        literal.try_into().map_err(|_| LoxError::RuntimeError {
-            // TODO get rid of clone
-            token: token.clone(),
-            message: "Operand must be a number.".into(),
-        })
-    }
-
-    fn is_equal(a: Value, b: Value) -> bool {
-        match (a, b) {
-            (Value::Nil, Value::Nil) => true,
-            (Value::Nil, _) => false,
-            (Value::Boolean(v1), Value::Boolean(v2)) => v1 == v2,
-            #[allow(clippy::float_cmp)]
-            (Value::Number(v1), Value::Number(v2)) => v1 == v2,
-            (Value::String(v1), Value::String(v2)) => v1 == v2,
-            (_, _) => false,
-        }
-    }
-
     fn lookup_variable(&mut self, name: &Token) -> Result<Value> {
         match self.locals.get(&name.id) {
             Some(distance) => self.environment.borrow().get_at(*distance, name),
@@ -122,18 +94,15 @@ impl ExprVisitor<Result<Value>> for Interpreter {
         let right_value = self.evaluate(right)?;
 
         Ok(match operator.kind {
-            TokenKind::Minus => Value::Number(
-                Interpreter::to_number(left_value, operator)?
-                    - Interpreter::to_number(right_value, operator)?,
-            ),
-            TokenKind::Slash => Value::Number(
-                Interpreter::to_number(left_value, operator)?
-                    / Interpreter::to_number(right_value, operator)?,
-            ),
-            TokenKind::Star => Value::Number(
-                Interpreter::to_number(left_value, operator)?
-                    * Interpreter::to_number(right_value, operator)?,
-            ),
+            TokenKind::Minus => {
+                Value::Number(left_value.to_number(operator)? - right_value.to_number(operator)?)
+            }
+            TokenKind::Slash => {
+                Value::Number(left_value.to_number(operator)? / right_value.to_number(operator)?)
+            }
+            TokenKind::Star => {
+                Value::Number(left_value.to_number(operator)? * right_value.to_number(operator)?)
+            }
             TokenKind::Plus => match (left_value, right_value) {
                 (Value::Number(l), Value::Number(r)) => Value::Number(l + r),
                 (Value::String(l), Value::String(r)) => Value::String(format!("{}{}", l, r)),
@@ -145,24 +114,20 @@ impl ExprVisitor<Result<Value>> for Interpreter {
                     });
                 }
             },
-            TokenKind::Greater => Value::Boolean(
-                Interpreter::to_number(left_value, operator)?
-                    > Interpreter::to_number(right_value, operator)?,
-            ),
-            TokenKind::GreaterEqual => Value::Boolean(
-                Interpreter::to_number(left_value, operator)?
-                    >= Interpreter::to_number(right_value, operator)?,
-            ),
-            TokenKind::Less => Value::Boolean(
-                Interpreter::to_number(left_value, operator)?
-                    < Interpreter::to_number(right_value, operator)?,
-            ),
-            TokenKind::LessEqual => Value::Boolean(
-                Interpreter::to_number(left_value, operator)?
-                    <= Interpreter::to_number(right_value, operator)?,
-            ),
-            TokenKind::BangEqual => Value::Boolean(!Interpreter::is_equal(left_value, right_value)),
-            TokenKind::EqualEqual => Value::Boolean(Interpreter::is_equal(left_value, right_value)),
+            TokenKind::Greater => {
+                Value::Boolean(left_value.to_number(operator)? > right_value.to_number(operator)?)
+            }
+            TokenKind::GreaterEqual => {
+                Value::Boolean(left_value.to_number(operator)? >= right_value.to_number(operator)?)
+            }
+            TokenKind::Less => {
+                Value::Boolean(left_value.to_number(operator)? < right_value.to_number(operator)?)
+            }
+            TokenKind::LessEqual => {
+                Value::Boolean(left_value.to_number(operator)? <= right_value.to_number(operator)?)
+            }
+            TokenKind::BangEqual => Value::Boolean(!left_value.is_equal(&right_value)),
+            TokenKind::EqualEqual => Value::Boolean(left_value.is_equal(&right_value)),
             _ => unreachable!(),
         })
     }
@@ -171,8 +136,8 @@ impl ExprVisitor<Result<Value>> for Interpreter {
         let right_value = self.evaluate(right)?;
 
         Ok(match operator.kind {
-            TokenKind::Minus => Value::Number(-f64::try_from(right_value).unwrap()),
-            TokenKind::Bang => Value::Boolean(!Interpreter::is_truthy(&right_value)),
+            TokenKind::Minus => Value::Number(-right_value.to_number(operator)?),
+            TokenKind::Bang => Value::Boolean(!right_value.is_truthy()),
             _ => unreachable!(),
         })
     }
@@ -212,12 +177,12 @@ impl ExprVisitor<Result<Value>> for Interpreter {
         let left_value = self.evaluate(left)?;
         match operator.kind {
             TokenKind::Or => {
-                if Interpreter::is_truthy(&left_value) {
+                if left_value.is_truthy() {
                     return Ok(left_value);
                 }
             }
             TokenKind::And => {
-                if !Interpreter::is_truthy(&left_value) {
+                if !left_value.is_truthy() {
                     return Ok(left_value);
                 }
             }
@@ -322,7 +287,7 @@ impl StmtVisitor<Result<()>> for Interpreter {
         then_branch: &Stmt,
         else_branch: Option<&Stmt>,
     ) -> Result<()> {
-        if Interpreter::is_truthy(&self.evaluate(condition)?) {
+        if self.evaluate(condition)?.is_truthy() {
             self.execute(then_branch)?;
         } else if let Some(else_branch) = else_branch {
             self.execute(else_branch)?;
@@ -332,7 +297,7 @@ impl StmtVisitor<Result<()>> for Interpreter {
     }
 
     fn visit_while_stmt(&mut self, condition: &Expr, body: &Stmt) -> Result<()> {
-        while Interpreter::is_truthy(&self.evaluate(condition)?) {
+        while self.evaluate(condition)?.is_truthy() {
             self.execute(body)?;
         }
 

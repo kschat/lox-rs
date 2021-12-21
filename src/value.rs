@@ -162,6 +162,36 @@ pub enum Value {
     Nil,
 }
 
+impl Value {
+    pub fn is_equal(&self, other: &Value) -> bool {
+        match (self, other) {
+            (Value::Nil, Value::Nil) => true,
+            (Value::Nil, _) => false,
+            (Value::Boolean(v1), Value::Boolean(v2)) => v1 == v2,
+            #[allow(clippy::float_cmp)]
+            (Value::Number(v1), Value::Number(v2)) => v1 == v2,
+            (Value::String(v1), Value::String(v2)) => v1 == v2,
+            (_, _) => false,
+        }
+    }
+
+    pub fn is_truthy(&self) -> bool {
+        match *self {
+            Value::Nil => false,
+            Value::Boolean(value) => value,
+            _ => true,
+        }
+    }
+
+    pub fn to_number(&self, token: &Token) -> Result<f64> {
+        self.try_into().map_err(|_| LoxError::RuntimeError {
+            // TODO get rid of clone
+            token: token.clone(),
+            message: "Operand must be a number.".into(),
+        })
+    }
+}
+
 impl Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -249,12 +279,12 @@ impl From<f64> for Value {
     }
 }
 
-impl TryFrom<Value> for f64 {
+impl TryFrom<&Value> for f64 {
     type Error = LoxError;
 
-    fn try_from(value: Value) -> Result<Self, Self::Error> {
+    fn try_from(value: &Value) -> Result<Self, Self::Error> {
         match value {
-            Value::Number(v) => Ok(v),
+            Value::Number(v) => Ok(*v),
             _ => Err(Self::Error::LiteralParseError),
         }
     }
