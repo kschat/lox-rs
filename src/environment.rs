@@ -37,7 +37,6 @@ impl Environment {
             None => match &self.enclosing {
                 Some(enclosing) => enclosing.borrow().get(name),
                 None => Err(LoxError::RuntimeError {
-                    // TODO get rid of clone
                     token: name.clone(),
                     message: format!("Undefined variable '{}'.", name.lexeme),
                 }),
@@ -51,7 +50,6 @@ impl Environment {
             _ => match &self.enclosing {
                 Some(enclosing) => enclosing.borrow().get_at(distance - 1, name),
                 None => Err(LoxError::RuntimeError {
-                    // TODO get rid of clone
                     token: name.clone(),
                     message: format!("Undefined variable '{}'.", name.lexeme),
                 }),
@@ -81,7 +79,6 @@ impl Environment {
         match &self.enclosing {
             Some(enclosing) => enclosing.borrow_mut().assign(name, value),
             None => Err(LoxError::RuntimeError {
-                // TODO get rid of clone
                 token: name.clone(),
                 message: format!("variable '{}' not defined.", name.lexeme),
             }),
@@ -98,7 +95,6 @@ impl Environment {
         match &self.enclosing {
             Some(enclosing) => enclosing.borrow_mut().assign_at(distance - 1, name, value),
             None => Err(LoxError::RuntimeError {
-                // TODO get rid of clone
                 token: name.clone(),
                 message: format!("variable '{}' not defined.", name.lexeme),
             }),

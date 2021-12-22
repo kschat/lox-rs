@@ -67,7 +67,7 @@ impl<'a> Resolver<'a> {
         &mut self,
         kind: FunctionKind,
         parameters: &[Token],
-        block: &[Stmt],
+        body: &[Stmt],
     ) -> Result<()> {
         let enclosing_function_kind = self.current_function_kind;
         self.current_function_kind = Some(kind);
@@ -78,7 +78,7 @@ impl<'a> Resolver<'a> {
             self.define(parameter);
         }
 
-        self.resolve_statements(block)?;
+        self.resolve_statements(body)?;
         self.end_scope();
         self.current_function_kind = enclosing_function_kind;
 
@@ -247,11 +247,11 @@ impl<'a> StmtVisitor<Result<()>> for Resolver<'a> {
         &mut self,
         name: &Token,
         parameters: &[Token],
-        block: &[Stmt],
+        body: &[Stmt],
     ) -> Result<()> {
         self.declare(name);
         self.define(name);
-        self.resolve_function(FunctionKind::Function, parameters, block)?;
+        self.resolve_function(FunctionKind::Function, parameters, body)?;
 
         Ok(())
     }
@@ -291,13 +291,13 @@ impl<'a> StmtVisitor<Result<()>> for Resolver<'a> {
 
         for method in methods {
             match method {
-                Stmt::Function(name, parameters, block) => {
+                Stmt::Function(name, parameters, body) => {
                     let kind = match name.lexeme == "init" {
                         true => FunctionKind::Initializer,
                         false => FunctionKind::Method,
                     };
 
-                    self.resolve_function(kind, parameters, block)?;
+                    self.resolve_function(kind, parameters, body)?;
                 }
                 _ => unreachable!(),
             };

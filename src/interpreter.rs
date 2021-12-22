@@ -108,7 +108,6 @@ impl ExprVisitor<Result<Value>> for Interpreter {
                 (Value::String(l), Value::String(r)) => Value::String(format!("{}{}", l, r)),
                 _ => {
                     return Err(LoxError::RuntimeError {
-                        // TODO get rid of clone
                         token: operator.clone(),
                         message: "Operands must be two numbers or two strings.".into(),
                     });
@@ -308,15 +307,15 @@ impl StmtVisitor<Result<()>> for Interpreter {
         &mut self,
         name: &Token,
         parameters: &[Token],
-        block: &[Stmt],
+        body: &[Stmt],
     ) -> Result<()> {
-        let function = Value::Function(
-            name.clone().into(),
-            parameters.to_vec(),
-            block.to_vec(),
-            self.environment.clone(),
-            false,
-        );
+        let function = Value::Function {
+            name: name.clone().into(),
+            parameters: parameters.to_vec(),
+            body: body.to_vec(),
+            closure: self.environment.clone(),
+            is_initializer: false,
+        };
 
         self.environment.borrow_mut().define(&name.lexeme, function);
 
@@ -338,16 +337,16 @@ impl StmtVisitor<Result<()>> for Interpreter {
         let methods = methods
             .iter()
             .fold(HashMap::new(), |mut acc, method| match method {
-                Stmt::Function(name, parameters, block) => {
+                Stmt::Function(name, parameters, body) => {
                     acc.insert(
                         name.lexeme.to_string(),
-                        Value::Function(
-                            name.clone().into(),
-                            parameters.clone(),
-                            block.clone(),
-                            self.environment.clone(),
-                            name.lexeme == "init",
-                        ),
+                        Value::Function {
+                            name: name.clone().into(),
+                            parameters: parameters.clone(),
+                            body: body.clone(),
+                            closure: self.environment.clone(),
+                            is_initializer: name.lexeme == "init",
+                        },
                     );
 
                     acc

@@ -45,7 +45,7 @@ pub trait StmtVisitor<T> {
         else_branch: Option<&Stmt>,
     ) -> T;
     fn visit_while_stmt(&mut self, condition: &Expr, body: &Stmt) -> T;
-    fn visit_function_stmt(&mut self, name: &Token, parameters: &[Token], block: &[Stmt]) -> T;
+    fn visit_function_stmt(&mut self, name: &Token, parameters: &[Token], body: &[Stmt]) -> T;
     fn visit_return_stmt(&mut self, keyword: &Token, value: Option<&Expr>) -> T;
     fn visit_class_stmt(&mut self, name: &Token, methods: &[Stmt]) -> T;
 }

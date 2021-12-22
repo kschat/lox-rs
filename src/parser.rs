@@ -124,7 +124,6 @@ impl Parser {
     }
 
     fn var_declaration(&mut self) -> ParserResult<Stmt> {
-        // TODO get rid of clone
         let identifier = self
             .try_consume(TokenKind::Identifier, "Expected variable name.")?
             .clone();
@@ -289,7 +288,6 @@ impl Parser {
     }
 
     fn return_statement(&mut self) -> ParserResult<Stmt> {
-        // TODO get rid of clone
         let keyword = self.previous().clone();
         let value = match self.check(TokenKind::Semicolon) {
             false => Some(self.expression()?),
@@ -331,7 +329,6 @@ impl Parser {
         let expr = self.or()?;
 
         if self.matches(&[TokenKind::Equal]) {
-            // TODO get rid of clone
             let equal = self.previous().clone();
             let value = self.assignment()?;
 
@@ -353,7 +350,6 @@ impl Parser {
         let mut expr = self.and()?;
 
         while self.matches(&[TokenKind::Or]) {
-            // TODO get rid of clone
             let operator = self.previous().clone();
             let right = self.and()?;
 
@@ -367,7 +363,6 @@ impl Parser {
         let mut expr = self.equality()?;
 
         while self.matches(&[TokenKind::And]) {
-            // TODO get rid of clone
             let operator = self.previous().clone();
             let right = self.equality()?;
 
@@ -381,7 +376,6 @@ impl Parser {
         let mut expr = self.comparison()?;
 
         while self.matches(&[TokenKind::BangEqual, TokenKind::EqualEqual]) {
-            // TODO get rid of clone
             let operator = self.previous().clone();
             let right = self.comparison()?;
             expr = Expr::Binary(expr.into(), operator, right.into());
@@ -399,7 +393,6 @@ impl Parser {
             TokenKind::Less,
             TokenKind::LessEqual,
         ]) {
-            // TODO get rid of clone
             let operator = self.previous().clone();
             let right = self.term()?;
             expr = Expr::Binary(expr.into(), operator, right.into());
@@ -412,7 +405,6 @@ impl Parser {
         let mut expr = self.factor()?;
 
         while self.matches(&[TokenKind::Minus, TokenKind::Plus]) {
-            // TODO get rid of clone
             let operator = self.previous().clone();
             let right = self.factor()?;
             expr = Expr::Binary(expr.into(), operator, right.into());
@@ -425,7 +417,6 @@ impl Parser {
         let mut expr = self.unary()?;
 
         while self.matches(&[TokenKind::Slash, TokenKind::Star]) {
-            // TODO get rid of clone
             let operator = self.previous().clone();
             let right = self.unary()?;
             expr = Expr::Binary(expr.into(), operator, right.into());
@@ -436,7 +427,6 @@ impl Parser {
 
     fn unary(&mut self) -> ParserResult<Expr> {
         if self.matches(&[TokenKind::Bang, TokenKind::Minus]) {
-            // TODO get rid of clone
             let operator = self.previous().clone();
             let right = self.unary()?;
             return Ok(Expr::Unary(operator, right.into()));
@@ -477,7 +467,6 @@ impl Parser {
         let right_paren =
             self.try_consume(TokenKind::RightParen, "Expected ')' after arguments.")?;
 
-        // TODO get rid of clone
         Ok(Expr::Call(callee.into(), arguments, right_paren.clone()))
     }
 
@@ -512,8 +501,11 @@ impl Parser {
         }
 
         if self.matches(&[TokenKind::String, TokenKind::Number]) {
-            // TODO get rid of clone & unwrap
-            let literal = self.previous().clone().literal.unwrap();
+            let literal = self
+                .previous()
+                .clone()
+                .literal
+                .expect("Expected literal value on token");
 
             return Ok(Expr::Literal(literal));
         }
@@ -530,11 +522,9 @@ impl Parser {
         }
 
         if self.matches(&[TokenKind::Identifier]) {
-            // TODO get rid of clone
             return Ok(Expr::Variable(self.previous().clone()));
         }
 
-        // TODO get rid of clone
         Err(self.parser_error(self.peek().clone(), "Expected expression."))
     }
 
@@ -574,7 +564,6 @@ impl Parser {
             return Ok(self.advance());
         }
 
-        // TODO get rid of clone
         Err(self.parser_error(self.peek().clone(), message))
     }
 

@@ -149,13 +149,13 @@ pub enum Value {
     Number(f64),
     Boolean(bool),
     // TODO create LoxFunction struct
-    Function(
-        Box<Token>,
-        Vec<Token>,
-        Vec<Stmt>,
-        Rc<RefCell<Environment>>,
-        bool,
-    ),
+    Function {
+        name: Box<Token>,
+        parameters: Vec<Token>,
+        body: Vec<Stmt>,
+        closure: Rc<RefCell<Environment>>,
+        is_initializer: bool,
+    },
     NativeFunction(Box<dyn Callable>),
     Class(LoxClass),
     Instance(LoxInstance),
@@ -185,7 +185,6 @@ impl Value {
 
     pub fn to_number(&self, token: &Token) -> Result<f64> {
         self.try_into().map_err(|_| LoxError::RuntimeError {
-            // TODO get rid of clone
             token: token.clone(),
             message: "Operand must be a number.".into(),
         })
@@ -199,7 +198,7 @@ impl Display for Value {
             Self::Number(value) => Display::fmt(value, f),
             Self::Boolean(value) => Display::fmt(value, f),
             Self::NativeFunction(_) => Display::fmt("<native fn>", f),
-            Self::Function(name, _, _, _, _) => write!(f, "<fn {}>", name.lexeme),
+            Self::Function { name, .. } => write!(f, "<fn {}>", name.lexeme),
             Self::Class(class) => Display::fmt(class, f),
             Self::Instance(instance) => Display::fmt(instance, f),
             Self::Nil => Display::fmt("nil", f),
@@ -212,7 +211,13 @@ impl Callable for Value {
         match self {
             Value::NativeFunction(callee) => callee.call(interpreter, arguments),
             Value::Class(callee) => callee.call(interpreter, arguments),
-            Value::Function(_name, parameters, body, closure, is_initializer) => {
+            Value::Function {
+                parameters,
+                body,
+                closure,
+                is_initializer,
+                ..
+            } => {
                 let new_scope = Environment::new_with_parent(closure.clone());
 
                 for (i, parameter) in parameters.iter().enumerate() {
@@ -239,7 +244,7 @@ impl Callable for Value {
 
     fn arity(&self) -> usize {
         match self {
-            Value::Function(_, parameters, _, _, _) => parameters.len(),
+            Value::Function { parameters, .. } => parameters.len(),
             Value::NativeFunction(callable) => callable.arity(),
             Value::Class(class) => class.arity(),
             _ => 0,
@@ -248,19 +253,25 @@ impl Callable for Value {
 
     fn bind(&self, instance: &LoxInstance) -> Result<Value> {
         match self {
-            Value::Function(name, parameters, body, closure, is_initializer) => {
+            Value::Function {
+                name,
+                parameters,
+                body,
+                closure,
+                is_initializer,
+            } => {
                 let environment = Environment::new_with_parent(closure.clone());
                 environment
                     .borrow_mut()
                     .define("this", Value::Instance(instance.clone()));
 
-                Ok(Value::Function(
-                    name.clone(),
-                    parameters.clone(),
-                    body.clone(),
-                    environment,
-                    *is_initializer,
-                ))
+                Ok(Value::Function {
+                    name: name.clone(),
+                    parameters: parameters.clone(),
+                    body: body.clone(),
+                    closure: environment,
+                    is_initializer: *is_initializer,
+                })
             }
             _ => Err(LoxError::NotBindableError),
         }
