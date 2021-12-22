@@ -193,6 +193,23 @@ impl<'a> ExprVisitor<Result<()>> for Resolver<'a> {
 
         Ok(())
     }
+
+    fn visit_super_expr(&mut self, keyword: &Token, _method: &Token) -> Result<()> {
+        match self.current_class_kind {
+            Some(kind) if kind != ClassKind::Subclass => self.errors.push(ResolverErrorDetails {
+                message: "Can't use 'super' in a class with no superclass.".into(),
+                token: keyword.clone(),
+            }),
+            None => self.errors.push(ResolverErrorDetails {
+                message: "Can't use 'super' outside of class.".into(),
+                token: keyword.clone(),
+            }),
+            _ => {}
+        };
+
+        self.resolve_local(keyword);
+        Ok(())
+    }
 }
 
 impl<'a> StmtVisitor<Result<()>> for Resolver<'a> {
@@ -278,11 +295,29 @@ impl<'a> StmtVisitor<Result<()>> for Resolver<'a> {
         Ok(())
     }
 
-    fn visit_class_stmt(&mut self, name: &Token, methods: &[Stmt]) -> Result<()> {
+    fn visit_class_stmt(
+        &mut self,
+        name: &Token,
+        superclass: Option<&Expr>,
+        methods: &[Stmt],
+    ) -> Result<()> {
         let enclosing_class_kind = self.current_class_kind;
         self.current_class_kind = Some(ClassKind::Class);
 
         self.declare(name);
+        self.define(name);
+
+        if let Some(superclass) = superclass {
+            self.current_class_kind = Some(ClassKind::Subclass);
+            // TODO staticly determine if a class tries to extend itself
+            self.resolve_expression(superclass)?;
+            self.begin_scope();
+            self.scopes
+                .peek_mut()
+                .expect("Unexpected global scope")
+                .insert("super".into(), true);
+        }
+
         self.begin_scope();
         self.scopes
             .peek_mut()
@@ -304,7 +339,11 @@ impl<'a> StmtVisitor<Result<()>> for Resolver<'a> {
         }
 
         self.end_scope();
-        self.define(name);
+
+        if superclass.is_some() {
+            self.end_scope();
+        }
+
         self.current_class_kind = enclosing_class_kind;
 
         Ok(())
@@ -318,9 +357,10 @@ enum FunctionKind {
     Initializer,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 enum ClassKind {
     Class,
+    Subclass,
 }
 
 struct Stack<T>(Vec<T>);

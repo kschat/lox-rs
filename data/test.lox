@@ -12,16 +12,25 @@ var counter = makeCounter();
 print counter();
 print counter();
 
-class Foo {
+class Bar {
+  method() {
+    return "Bar";
+  }
+}
+
+class Foo < Bar {
   init(name) {
     this.name = name;
     return;
   }
 
-  bar() { return this.name; }
+  method() {
+    var message = super.method();
+    return message + " and Foo";
+  }
 }
 
 print Foo;
 var foo = Foo("kyle");
 print foo;
-print foo.bar();
+print foo.method();

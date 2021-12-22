@@ -17,17 +17,35 @@ use crate::{
 
 #[derive(Debug, Clone)]
 pub struct LoxClass {
-    name: String,
+    pub name: String,
     methods: HashMap<String, Value>,
+    superclass: Option<Box<LoxClass>>,
 }
 
+// TODO wrap LoxClass in Rc
 impl LoxClass {
-    pub fn new(name: String, methods: HashMap<String, Value>) -> Self {
-        Self { name, methods }
+    pub fn new(
+        name: String,
+        methods: HashMap<String, Value>,
+        superclass: Option<LoxClass>,
+    ) -> Self {
+        Self {
+            name,
+            methods,
+            superclass: superclass.map(Box::new),
+        }
     }
 
     pub fn find_method(&self, name: &str) -> Option<&Value> {
-        self.methods.get(name)
+        if self.methods.contains_key(name) {
+            return self.methods.get(name);
+        }
+
+        if let Some(superclass) = &self.superclass {
+            return superclass.find_method(name);
+        }
+
+        None
     }
 }
 

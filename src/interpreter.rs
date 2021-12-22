@@ -248,6 +248,33 @@ impl ExprVisitor<Result<Value>> for Interpreter {
     fn visit_this_expr(&mut self, keyword: &Token) -> Result<Value> {
         self.lookup_variable(keyword)
     }
+
+    fn visit_super_expr(&mut self, keyword: &Token, method: &Token) -> Result<Value> {
+        let distance = self
+            .locals
+            .get(&keyword.id)
+            .expect("Could not find scope for 'super'.");
+
+        let environment = self.environment.borrow();
+
+        let superclass = match environment.get_keyword_at(*distance, "super")? {
+            Value::Class(class) => class,
+            _ => unreachable!(),
+        };
+
+        let object = match environment.get_keyword_at(distance - 1, "this")? {
+            Value::Instance(instance) => instance,
+            _ => unreachable!(),
+        };
+
+        superclass
+            .find_method(&method.lexeme)
+            .ok_or_else(|| LoxError::RuntimeError {
+                message: format!("Undefined property '{}'.", method.lexeme),
+                token: method.clone(),
+            })?
+            .bind(&object)
+    }
 }
 
 impl StmtVisitor<Result<()>> for Interpreter {
@@ -329,10 +356,40 @@ impl StmtVisitor<Result<()>> for Interpreter {
         }))
     }
 
-    fn visit_class_stmt(&mut self, name: &Token, methods: &[Stmt]) -> Result<()> {
+    fn visit_class_stmt(
+        &mut self,
+        name: &Token,
+        superclass: Option<&Expr>,
+        methods: &[Stmt],
+    ) -> Result<()> {
+        let superclass = superclass
+            .map(|value| {
+                self.evaluate(value).and_then(|v| match v {
+                    Value::Class(class) => Ok(class),
+                    _ => Err(LoxError::RuntimeError {
+                        message: "Superclass must be a class.".into(),
+                        token: name.clone(),
+                    }),
+                })
+            })
+            .transpose()?;
+
         self.environment
             .borrow_mut()
             .define(&name.lexeme, Value::Nil);
+
+        let enclosing_environment = match superclass {
+            Some(ref superclass) => {
+                let previous_env = self.environment.clone();
+                self.environment = Environment::new_with_parent(self.environment.clone());
+                self.environment
+                    .borrow_mut()
+                    .define("super", Value::Class(superclass.clone()));
+
+                Some(previous_env)
+            }
+            None => None,
+        };
 
         let methods = methods
             .iter()
@@ -354,7 +411,11 @@ impl StmtVisitor<Result<()>> for Interpreter {
                 _ => unreachable!(),
             });
 
-        let class = Value::Class(LoxClass::new(name.lexeme.clone(), methods));
+        let class = Value::Class(LoxClass::new(name.lexeme.clone(), methods, superclass));
+
+        if let Some(environment) = enclosing_environment {
+            self.environment = environment;
+        }
 
         self.environment.borrow_mut().assign(name, &class)?;
 

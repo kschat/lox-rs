@@ -18,7 +18,8 @@ type ParserResult<T> = Result<T, ParserErrorDetails>;
 ///
 /// declaration         -> classDeclaration | varDeclaration
 ///                      | functionDeclaration | statement ;
-/// classDeclaration    -> "class" IDENTIFIER "{" function* "}" ;
+/// classDeclaration    -> "class" IDENTIFIER ( "<" IDENTIFIER )?
+///                      "{" function* "}" ;
 /// varDeclaration      -> "var" IDENTIFIER ( "=" expression )? ";" ;
 /// functionDeclaration -> "fun" function ;
 /// function            -> IDENTIFIER "(" parameters? ")" block ;
@@ -49,7 +50,8 @@ type ParserResult<T> = Result<T, ParserErrorDetails>;
 /// call                -> primary ( "(" arguments? ")" | "." IDENTIFIER )* ;
 /// arguments           -> expression ( "," expression )* ;
 /// primary             -> NUMBER | STRING | "nil" | "true" | "false"
-///                      | "(" expression ")" | IDENTIFIER ;
+///                      | "(" expression ")" | IDENTIFIER
+///                      | "super" "." IDENTIFIER ;
 pub struct Parser {
     tokens: Vec<Token>,
     current: usize,
@@ -111,6 +113,17 @@ impl Parser {
             .try_consume(TokenKind::Identifier, "Expected class name.")?
             .clone();
 
+        let superclass = match self.matches(&[TokenKind::Less]) {
+            false => None,
+            true => {
+                let name = self
+                    .try_consume(TokenKind::Identifier, "Expected super class name.")?
+                    .clone();
+
+                Some(Expr::Variable(name))
+            }
+        };
+
         self.try_consume(TokenKind::LeftBrace, "Expected '{' before class body.")?;
 
         let mut methods = vec![];
@@ -120,7 +133,7 @@ impl Parser {
 
         self.try_consume(TokenKind::RightBrace, "Expected '}' after class body.")?;
 
-        Ok(Stmt::Class(name, methods))
+        Ok(Stmt::Class(name, superclass, methods))
     }
 
     fn var_declaration(&mut self) -> ParserResult<Stmt> {
@@ -519,6 +532,16 @@ impl Parser {
 
         if self.matches(&[TokenKind::This]) {
             return Ok(Expr::This(self.previous().clone()));
+        }
+
+        if self.matches(&[TokenKind::Super]) {
+            let keyword = self.previous().clone();
+            self.try_consume(TokenKind::Dot, "Expected '.' after 'super'")?;
+            let method = self
+                .try_consume(TokenKind::Identifier, "Expected superclass method name")?
+                .clone();
+
+            return Ok(Expr::Super(keyword, method));
         }
 
         if self.matches(&[TokenKind::Identifier]) {
