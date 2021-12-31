@@ -9,6 +9,12 @@ path = "src/interpreter/main.rs"
 test = true
 bench = false
 
+[[bin]]
+name = "blox"
+path = "src/bytecode/main.rs"
+test = true
+bench = false
+
 [dependencies]
 anyhow = "1.0.45"
 thiserror = "1.0.30"
