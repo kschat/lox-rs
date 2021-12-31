@@ -1,9 +1,29 @@
+use strum::{AsRefStr, Display, FromRepr};
+
 use crate::{error::LoxError, value::Value};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(FromRepr, Display, AsRefStr, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum OpCode {
+    #[strum(to_string = "OP_CONSTANT")]
     Constant = 0,
+
+    #[strum(to_string = "OP_ADD")]
+    Add,
+
+    #[strum(to_string = "OP_SUBTRACT")]
+    Subtract,
+
+    #[strum(to_string = "OP_MULTIPLY")]
+    Multiply,
+
+    #[strum(to_string = "OP_DIVIDE")]
+    Divide,
+
+    #[strum(to_string = "OP_MEGATE")]
+    Negate,
+
+    #[strum(to_string = "OP_RETURN")]
     Return,
 }
 
@@ -11,11 +31,7 @@ impl TryFrom<u8> for OpCode {
     type Error = LoxError;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            value if value == OpCode::Return as u8 => Ok(OpCode::Return),
-            value if value == OpCode::Constant as u8 => Ok(OpCode::Constant),
-            _ => Err(LoxError::OpCodeConversionError),
-        }
+        OpCode::from_repr(value).ok_or(LoxError::OpCodeConversionError)
     }
 }
 
